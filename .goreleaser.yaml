@@ -1,0 +1,21 @@
+project_name: atlantis-emoji-gate
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    mod_timestamp: '{{ .CommitTimestamp }}'
+    main: ./cmd/emoji-gate
+
+changelog:
+  use:
+    github-native
