@@ -71,7 +71,7 @@ func checkMandatoryApproval(cfg GitlabConfig) (bool, error) {
 		return false, err
 	}
 
-	owners, err := ParseCodeOwners(cfg.CodeOwnersPath)
+	owners, err := ParseCodeOwners(fmt.Sprintf("%s/%s", cfg.RepoPath, cfg.CodeOwnersPath))
 	if err != nil {
 		return false, err
 	}
@@ -80,6 +80,10 @@ func checkMandatoryApproval(cfg GitlabConfig) (bool, error) {
 
 	for _, reaction := range reactions {
 		if slices.Contains(owners, reaction.User.Username) && reaction.Name == cfg.ApproveEmoji {
+			if cfg.MrAuthor == reaction.User.Username && !cfg.Insecure {
+				fmt.Println("MR author is not allowed to approve his own MR")
+				continue
+			}
 			approvedBy = append(approvedBy, reaction.User.Username)
 		}
 	}
@@ -95,6 +99,11 @@ func checkMandatoryApproval(cfg GitlabConfig) (bool, error) {
 
 func main() {
 	cfg := NewGitlabConfig()
+
+	if cfg.Insecure {
+		fmt.Println("Insecure mode is enabled, MR author is allowed to approve his own MR")
+	}
+
 	approved, err := checkMandatoryApproval(cfg)
 	if err != nil {
 		log.Fatalf("Error checking mandatory approval: %v", err)

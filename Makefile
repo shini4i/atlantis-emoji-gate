@@ -8,3 +8,7 @@ help: ## Print this help
 .PHONY: test
 test: ## Run tests
 	@go test -v ./... -count=1
+
+.PHONY: build
+build: ## Build the binary
+	@GOOS=linux GOARCH=amd64 GO_ENABLED=0 go build -ldflags="-s -w" -o bin/atlantis-emoji-gate ./cmd/emoji-gate

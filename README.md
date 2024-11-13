@@ -23,10 +23,9 @@ This acts as a replacement for mandatory MR approval (which does not work on CE)
 
 `atlantis-emoji-gate` is configured using environment variables. The following variables are available:
 
-- `ATLANTIS_GITLAB_HOSTNAME` - The hostname of the GitLab instance to connect to (should be already present in the Atlantis environment)
-- `ATLANTIS_GITLAB_TOKEN` - The token to use to authenticate with the GitLab instance (should be already present in the Atlantis environment)
 - `APPROVE_EMOJI` - The emoji that must be present on the MR for `atlantis apply` to be allowed to run (default: `thumbsup`)
 - `CODEOWNERS_PATH` - The path to the CODEOWNERS file in the repository (default: `CODEOWNERS`)
+- `INSECURE` - If MR author is allowed to approve their own MR (default: `false`)
 
 The remaining environment variables are set dynamically by Atlantis and should not be set manually.
 
@@ -34,7 +33,7 @@ At this early stage, only owners of the whole repository are supported.
 
 CODEOWNERS file example:
 ```
-* @username
+* @username @username2
 ```
 
 Workflow example:
@@ -47,7 +46,7 @@ workflows:
         - plan
     apply:
       steps:
-        - run: emoji-gate
+        - run: atlantis-emoji-gate
         - apply
 ```
 
