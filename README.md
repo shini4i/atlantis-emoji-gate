@@ -11,7 +11,7 @@
 </div>
 
 > [!WARNING]
-> This project is in the early stages of development and is not yet ready for production use.
+> This project is in the early stages of development and is not yet ready for production use. Some breaking changes may occur.
 
 ## General information
 

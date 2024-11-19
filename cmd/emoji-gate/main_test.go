@@ -1,44 +1,102 @@
 package main
 
 import (
-	"os"
+	"fmt"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/xanzy/go-gitlab"
 )
 
-func TestParseCodeOwners(t *testing.T) {
-	// Create a temporary CODEOWNERS file for testing
-	content := `
-# This is a comment
-* @owner1 @owner2
-/docs @docowner
-`
-	tmpFile, err := os.CreateTemp("", "CODEOWNERS")
-	if err != nil {
-		t.Fatalf("Failed to create temp file: %v", err)
-	}
-	defer func(name string) {
-		err := os.Remove(name)
-		if err != nil {
-			t.Fatalf("Failed to remove temp file: %v", err)
-		}
-	}(tmpFile.Name())
-
-	if _, err := tmpFile.Write([]byte(content)); err != nil {
-		t.Fatalf("Failed to write to temp file: %v", err)
-	}
-	if err := tmpFile.Close(); err != nil {
-		t.Fatalf("Failed to close temp file: %v", err)
+func TestRun_Success(t *testing.T) {
+	mockClient := &MockGitlabClient{
+		ProjectID:     123,
+		DefaultBranch: "main",
+		FileContent:   "* @user1",
+		AwardEmojiList: []*gitlab.AwardEmoji{
+			{
+				Name: "thumbsup",
+				User: struct {
+					Name      string `json:"name"`
+					Username  string `json:"username"`
+					ID        int    `json:"id"`
+					State     string `json:"state"`
+					AvatarURL string `json:"avatar_url"`
+					WebURL    string `json:"web_url"`
+				}{
+					Username: "user1",
+				},
+			},
+		},
 	}
 
-	// Call the function to test
-	owners, err := ParseCodeOwners(tmpFile.Name())
-	if err != nil {
-		t.Fatalf("Failed to parse CODEOWNERS file: %v", err)
+	cfg := &GitlabConfig{
+		BaseRepoOwner:  "test-owner",
+		BaseRepoName:   "test-repo",
+		CodeOwnersPath: "CODEOWNERS",
+		ApproveEmoji:   "thumbsup",
+		MrAuthor:       "user2",
+		Insecure:       false,
 	}
 
-	// Assert the expected values
-	expectedOwners := []string{"owner1", "owner2"}
-	assert.Equal(t, expectedOwners, owners)
+	exitCode := Run(mockClient, cfg)
+	if exitCode != 0 {
+		t.Errorf("expected exit code 0, got %d", exitCode)
+	}
+}
+
+func TestRun_Failure(t *testing.T) {
+	mockClient := &MockGitlabClient{
+		ProjectID:     123,
+		DefaultBranch: "main",
+		FileContent:   "* @user1",
+		AwardEmojiList: []*gitlab.AwardEmoji{
+			{
+				Name: "thumbsup",
+				User: struct {
+					Name      string `json:"name"`
+					Username  string `json:"username"`
+					ID        int    `json:"id"`
+					State     string `json:"state"`
+					AvatarURL string `json:"avatar_url"`
+					WebURL    string `json:"web_url"`
+				}{
+					Username: "user2", // MR author cannot approve
+				},
+			},
+		},
+	}
+
+	cfg := &GitlabConfig{
+		BaseRepoOwner:  "test-owner",
+		BaseRepoName:   "test-repo",
+		CodeOwnersPath: "CODEOWNERS",
+		ApproveEmoji:   "thumbsup",
+		MrAuthor:       "user2",
+		Insecure:       false,
+	}
+
+	exitCode := Run(mockClient, cfg)
+	if exitCode != 1 {
+		t.Errorf("expected exit code 1, got %d", exitCode)
+	}
+}
+
+func TestRun_Error(t *testing.T) {
+	mockClient := &MockGitlabClient{
+		InitError: fmt.Errorf("failed to initialize GitLab client"),
+	}
+
+	cfg := &GitlabConfig{
+		BaseRepoOwner:  "test-owner",
+		BaseRepoName:   "test-repo",
+		CodeOwnersPath: "CODEOWNERS",
+		ApproveEmoji:   "thumbsup",
+		MrAuthor:       "user2",
+		Insecure:       false,
+	}
+
+	exitCode := Run(mockClient, cfg)
+	if exitCode != 1 {
+		t.Errorf("expected exit code 1, got %d", exitCode)
+	}
 }
