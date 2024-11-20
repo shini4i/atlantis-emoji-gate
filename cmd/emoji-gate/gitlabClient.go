@@ -2,90 +2,99 @@ package main
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
-
-	"github.com/xanzy/go-gitlab"
+	"io"
+	"net/http"
+	"net/url"
 )
 
-// GitlabClientInterface defines the methods required for interacting with GitLab.
+// GitlabClientInterface defines the methods that must be implemented by a GitLab client.
 type GitlabClientInterface interface {
-	Init(cfg *GitlabConfig) error
-	GetProjectIDFromPath(path string) (int, error)
-	FindDefaultBranch(projectID int) (string, error)
-	GetFileContentFromBranch(projectID int, branch, filePath string) (string, error)
-	ListAwardEmoji() ([]*gitlab.AwardEmoji, error)
+	GetProject(projectPath string) (*Project, error)
+	ListAwardEmojis(mrID int) ([]*AwardEmoji, error)
+	GetFileContent(branch, filePath string) (string, error)
 }
 
 type GitlabClient struct {
-	client      *gitlab.Client
-	mrId        int
-	projectPath string
+	Scheme    string
+	BaseURL   string
+	Token     string
+	ProjectID int
+	client    *http.Client
 }
 
-// Init initializes the GitLab client.
-func (g *GitlabClient) Init(cfg *GitlabConfig) error {
-	gitlabUrl := fmt.Sprintf("%s://%s", "https", cfg.Url)
-	client, err := gitlab.NewClient(cfg.Token, gitlab.WithBaseURL(gitlabUrl))
+type Project struct {
+	ID            int    `json:"id"`
+	DefaultBranch string `json:"default_branch"`
+}
+
+type AwardEmoji struct {
+	Name string `json:"name"`
+	User struct {
+		Username string `json:"username"`
+	} `json:"user"`
+}
+
+func NewGitlabClient(baseURL, token string) *GitlabClient {
+	return &GitlabClient{
+		Scheme:  "https",
+		BaseURL: baseURL,
+		Token:   token,
+		client:  &http.Client{},
+	}
+}
+
+func (g *GitlabClient) get(path string, target interface{}) error {
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s://%s/api/v4/%s", g.Scheme, g.BaseURL, path), nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Add("Private-Token", g.Token)
+	resp, err := g.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+			fmt.Println(err)
+		}
+	}(resp.Body)
+
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return err
 	}
 
-	g.client = client
-	g.mrId = cfg.PullRequestID
-	g.projectPath = fmt.Sprintf("%s/%s", cfg.BaseRepoOwner, cfg.BaseRepoName)
-
-	return nil
+	return json.Unmarshal(body, target)
 }
 
-// GetProjectIDFromPath fetches the project ID for the given repository path.
-func (g *GitlabClient) GetProjectIDFromPath(path string) (int, error) {
-	project, _, err := g.client.Projects.GetProject(path, nil)
-	if err != nil {
-		return 0, err
+func (g *GitlabClient) GetProject(projectPath string) (*Project, error) {
+	escapedPath := url.PathEscape(projectPath)
+	var project Project
+	err := g.get(fmt.Sprintf("/projects/%s", escapedPath), &project)
+	g.ProjectID = project.ID
+	return &project, err
+}
+
+func (g *GitlabClient) ListAwardEmojis(mrID int) ([]*AwardEmoji, error) {
+	var emojis []*AwardEmoji
+	err := g.get(fmt.Sprintf("/projects/%d/merge_requests/%d/award_emoji", g.ProjectID, mrID), &emojis)
+	return emojis, err
+}
+
+func (g *GitlabClient) GetFileContent(branch, filePath string) (string, error) {
+	var content struct {
+		Content string `json:"content"`
 	}
-
-	return project.ID, nil
-}
-
-// FindDefaultBranch retrieves the default branch for a given project ID.
-func (g *GitlabClient) FindDefaultBranch(projectID int) (string, error) {
-	project, _, err := g.client.Projects.GetProject(projectID, nil)
+	err := g.get(fmt.Sprintf("/projects/%d/repository/files/%s?ref=%s", g.ProjectID, filePath, branch), &content)
 	if err != nil {
 		return "", err
 	}
-
-	return project.DefaultBranch, nil
-}
-
-// GetFileContentFromBranch retrieves the content of a specific file from a branch.
-func (g *GitlabClient) GetFileContentFromBranch(projectID int, branch, filePath string) (string, error) {
-	opt := &gitlab.GetFileOptions{
-		Ref: gitlab.Ptr(branch),
-	}
-	file, _, err := g.client.RepositoryFiles.GetFile(projectID, filePath, opt)
+	decodedContent, err := base64.StdEncoding.DecodeString(content.Content)
 	if err != nil {
 		return "", err
 	}
-
-	decodedContent, err := base64.StdEncoding.DecodeString(file.Content)
-	if err != nil {
-		return "", err
-	}
-
 	return string(decodedContent), nil
-}
-
-// ListAwardEmoji fetches all reactions (emojis) on the current Merge Request.
-func (g *GitlabClient) ListAwardEmoji() ([]*gitlab.AwardEmoji, error) {
-	project, _, err := g.client.Projects.GetProject(g.projectPath, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	reactions, _, err := g.client.AwardEmoji.ListMergeRequestAwardEmoji(project.ID, g.mrId, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return reactions, nil
 }

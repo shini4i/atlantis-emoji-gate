@@ -1,102 +1,164 @@
 package main
 
 import (
-	"fmt"
 	"testing"
 
-	"github.com/xanzy/go-gitlab"
+	"github.com/stretchr/testify/assert"
 )
 
-func TestRun_Success(t *testing.T) {
+// MockGitlabClient is a mock implementation of the GitlabClientInterface.
+type MockGitlabClient struct {
+	Project        *Project
+	AwardEmojis    []*AwardEmoji
+	FileContent    string
+	ProjectErr     error
+	EmojisErr      error
+	FileContentErr error
+}
+
+func (m *MockGitlabClient) GetProject(projectPath string) (*Project, error) {
+	return m.Project, m.ProjectErr
+}
+
+func (m *MockGitlabClient) ListAwardEmojis(mrID int) ([]*AwardEmoji, error) {
+	return m.AwardEmojis, m.EmojisErr
+}
+
+func (m *MockGitlabClient) GetFileContent(branch, filePath string) (string, error) {
+	return m.FileContent, m.FileContentErr
+}
+
+// TestParseCodeOwners tests the parsing of the CODEOWNERS file.
+func TestParseCodeOwners(t *testing.T) {
+	content := "* @user1\n"
+	expectedOwners := []string{"user1"}
+
+	owners, err := ParseCodeOwners(content)
+	assert.NoError(t, err)
+	assert.Equal(t, expectedOwners, owners)
+}
+
+// TestCheckMandatoryApproval tests the CheckMandatoryApproval function.
+func TestCheckMandatoryApproval(t *testing.T) {
+	cfg := GitlabConfig{
+		ApproveEmoji:  "thumbsup",
+		MrAuthor:      "author",
+		Insecure:      false,
+		PullRequestID: 1,
+	}
+
 	mockClient := &MockGitlabClient{
-		ProjectID:     123,
-		DefaultBranch: "main",
-		FileContent:   "* @user1",
-		AwardEmojiList: []*gitlab.AwardEmoji{
+		AwardEmojis: []*AwardEmoji{
+			{Name: "thumbsup", User: struct {
+				Username string `json:"username"`
+			}{Username: "user1"}},
+		},
+	}
+
+	codeOwnersContent := "* @user1\n"
+
+	approved, err := CheckMandatoryApproval(mockClient, cfg, codeOwnersContent)
+	assert.NoError(t, err)
+	assert.True(t, approved)
+}
+
+// TestProcessMR tests the ProcessMR function.
+func TestProcessMR(t *testing.T) {
+	cfg := GitlabConfig{
+		BaseRepoOwner:  "owner",
+		BaseRepoName:   "repo",
+		CodeOwnersPath: "CODEOWNERS",
+		Insecure:       false,
+		PullRequestID:  1,
+		MrAuthor:       "author",
+		ApproveEmoji:   "thumbsup",
+	}
+
+	mockClient := &MockGitlabClient{
+		Project: &Project{
+			ID:            1,
+			DefaultBranch: "main",
+		},
+		FileContent: "* @user1\n",
+		AwardEmojis: []*AwardEmoji{
 			{
 				Name: "thumbsup",
 				User: struct {
-					Name      string `json:"name"`
-					Username  string `json:"username"`
-					ID        int    `json:"id"`
-					State     string `json:"state"`
-					AvatarURL string `json:"avatar_url"`
-					WebURL    string `json:"web_url"`
+					Username string `json:"username"`
 				}{
 					Username: "user1",
-				},
-			},
+				}},
 		},
 	}
 
-	cfg := &GitlabConfig{
-		BaseRepoOwner:  "test-owner",
-		BaseRepoName:   "test-repo",
-		CodeOwnersPath: "CODEOWNERS",
-		ApproveEmoji:   "thumbsup",
-		MrAuthor:       "user2",
-		Insecure:       false,
-	}
-
-	exitCode := Run(mockClient, cfg)
-	if exitCode != 0 {
-		t.Errorf("expected exit code 0, got %d", exitCode)
-	}
+	approved, err := ProcessMR(mockClient, cfg)
+	assert.NoError(t, err)
+	assert.True(t, approved)
 }
 
-func TestRun_Failure(t *testing.T) {
-	mockClient := &MockGitlabClient{
-		ProjectID:     123,
-		DefaultBranch: "main",
-		FileContent:   "* @user1",
-		AwardEmojiList: []*gitlab.AwardEmoji{
-			{
-				Name: "thumbsup",
-				User: struct {
-					Name      string `json:"name"`
-					Username  string `json:"username"`
-					ID        int    `json:"id"`
-					State     string `json:"state"`
-					AvatarURL string `json:"avatar_url"`
-					WebURL    string `json:"web_url"`
-				}{
-					Username: "user2", // MR author cannot approve
-				},
+// TestRun tests the Run function.
+func TestRun(t *testing.T) {
+	t.Run("MR author can approve their own MR", func(t *testing.T) {
+		cfg := GitlabConfig{
+			BaseRepoOwner:  "owner",
+			BaseRepoName:   "repo",
+			CodeOwnersPath: "CODEOWNERS",
+			Insecure:       true,
+			MrAuthor:       "author",
+			ApproveEmoji:   "thumbsup",
+			PullRequestID:  1,
+		}
+
+		mockClient := &MockGitlabClient{
+			Project: &Project{
+				ID:            1,
+				DefaultBranch: "main",
 			},
-		},
-	}
+			FileContent: "* @user1\n",
+			AwardEmojis: []*AwardEmoji{
+				{
+					Name: "thumbsup",
+					User: struct {
+						Username string `json:"username"`
+					}{
+						Username: "user1",
+					}},
+			},
+		}
 
-	cfg := &GitlabConfig{
-		BaseRepoOwner:  "test-owner",
-		BaseRepoName:   "test-repo",
-		CodeOwnersPath: "CODEOWNERS",
-		ApproveEmoji:   "thumbsup",
-		MrAuthor:       "user2",
-		Insecure:       false,
-	}
+		exitCode := Run(mockClient, cfg)
+		assert.Equalf(t, 0, exitCode, "Expected exit code 0, got %d", exitCode)
+	})
 
-	exitCode := Run(mockClient, cfg)
-	if exitCode != 1 {
-		t.Errorf("expected exit code 1, got %d", exitCode)
-	}
-}
+	t.Run("MR author cannot approve their own MR", func(t *testing.T) {
+		cfg := GitlabConfig{
+			BaseRepoOwner:  "owner",
+			BaseRepoName:   "repo",
+			CodeOwnersPath: "CODEOWNERS",
+			Insecure:       false,
+			MrAuthor:       "user1",
+			ApproveEmoji:   "thumbsup",
+			PullRequestID:  1,
+		}
 
-func TestRun_Error(t *testing.T) {
-	mockClient := &MockGitlabClient{
-		InitError: fmt.Errorf("failed to initialize GitLab client"),
-	}
+		mockClient := &MockGitlabClient{
+			Project: &Project{
+				ID:            1,
+				DefaultBranch: "main",
+			},
+			FileContent: "* @user1\n",
+			AwardEmojis: []*AwardEmoji{
+				{
+					Name: "thumbsup",
+					User: struct {
+						Username string `json:"username"`
+					}{
+						Username: "user1",
+					}},
+			},
+		}
 
-	cfg := &GitlabConfig{
-		BaseRepoOwner:  "test-owner",
-		BaseRepoName:   "test-repo",
-		CodeOwnersPath: "CODEOWNERS",
-		ApproveEmoji:   "thumbsup",
-		MrAuthor:       "user2",
-		Insecure:       false,
-	}
-
-	exitCode := Run(mockClient, cfg)
-	if exitCode != 1 {
-		t.Errorf("expected exit code 1, got %d", exitCode)
-	}
+		exitCode := Run(mockClient, cfg)
+		assert.Equalf(t, 1, exitCode, "Expected exit code 1, got %d", exitCode)
+	})
 }

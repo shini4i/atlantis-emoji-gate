@@ -42,13 +42,13 @@ func ParseCodeOwners(content string) ([]string, error) {
 }
 
 // CheckMandatoryApproval verifies if mandatory approvals are present based on CODEOWNERS.
-func CheckMandatoryApproval(client GitlabClientInterface, cfg *GitlabConfig, codeOwnersContent string) (bool, error) {
+func CheckMandatoryApproval(client GitlabClientInterface, cfg GitlabConfig, codeOwnersContent string) (bool, error) {
 	owners, err := ParseCodeOwners(codeOwnersContent)
 	if err != nil {
 		return false, fmt.Errorf("failed to parse CODEOWNERS: %w", err)
 	}
 
-	reactions, err := client.ListAwardEmoji()
+	reactions, err := client.ListAwardEmojis(cfg.PullRequestID)
 	if err != nil {
 		return false, fmt.Errorf("failed to fetch reactions: %w", err)
 	}
@@ -74,20 +74,14 @@ func CheckMandatoryApproval(client GitlabClientInterface, cfg *GitlabConfig, cod
 }
 
 // ProcessMR handles the MR processing, including approval checks.
-func ProcessMR(client GitlabClientInterface, cfg *GitlabConfig) (bool, error) {
-	projectPath := fmt.Sprintf("%s/%s", cfg.BaseRepoOwner, cfg.BaseRepoName)
-
-	projectID, err := client.GetProjectIDFromPath(projectPath)
+func ProcessMR(client GitlabClientInterface, cfg GitlabConfig) (bool, error) {
+	project, err := client.GetProject(fmt.Sprintf("%s/%s", cfg.BaseRepoOwner, cfg.BaseRepoName))
 	if err != nil {
-		return false, fmt.Errorf("failed to get project ID: %w", err)
+		return false, fmt.Errorf("failed to get project: %w", err)
 	}
 
-	branch, err := client.FindDefaultBranch(projectID)
-	if err != nil {
-		return false, fmt.Errorf("failed to find default branch: %w", err)
-	}
-
-	codeOwnersContent, err := client.GetFileContentFromBranch(projectID, branch, cfg.CodeOwnersPath)
+	branch := project.DefaultBranch
+	codeOwnersContent, err := client.GetFileContent(branch, cfg.CodeOwnersPath)
 	if err != nil {
 		return false, fmt.Errorf("failed to fetch CODEOWNERS file: %w", err)
 	}
@@ -96,12 +90,7 @@ func ProcessMR(client GitlabClientInterface, cfg *GitlabConfig) (bool, error) {
 }
 
 // Run handles the main logic of the program and returns an exit code.
-func Run(client GitlabClientInterface, cfg *GitlabConfig) int {
-	if err := client.Init(cfg); err != nil {
-		log.Printf("Error initializing GitLab client: %v", err)
-		return 1
-	}
-
+func Run(client GitlabClientInterface, cfg GitlabConfig) int {
 	if cfg.Insecure {
 		log.Println("Insecure mode enabled: MR author can approve their own MR")
 	}
@@ -119,10 +108,13 @@ func Run(client GitlabClientInterface, cfg *GitlabConfig) int {
 }
 
 func main() {
-	cfg := NewGitlabConfig()
-	client := &GitlabClient{}
+	cfg, err := NewGitlabConfig()
+	if err != nil {
+		log.Fatalf("Error parsing GitLab config: %v", err)
+	}
+
+	client := NewGitlabClient(cfg.Url, cfg.Token)
 
 	// Run the application and use the returned exit code.
-	exitCode := Run(client, &cfg)
-	os.Exit(exitCode)
+	os.Exit(Run(client, cfg))
 }
