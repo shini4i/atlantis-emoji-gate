@@ -41,4 +41,3 @@ jobs:
           fail_ci_if_error: true
           token: ${{ env.CODECOV_TOKEN }}
           files: coverage.out
-          verbose: true
