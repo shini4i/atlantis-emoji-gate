@@ -2,6 +2,8 @@
 
 # atlantis-emoji-gate
 
+![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/shini4i/atlantis-emoji-gate/run-tests.yml?branch=main)
+[![codecov](https://codecov.io/gh/shini4i/atlantis-emoji-gate/graph/badge.svg?token=1AZLXDU1HP)](https://codecov.io/gh/shini4i/atlantis-emoji-gate)
 ![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/shini4i/atlantis-emoji-gate)
 ![GitHub release (latest by date)](https://img.shields.io/github/v/release/shini4i/atlantis-emoji-gate)
 [![Go Report Card](https://goreportcard.com/badge/github.com/shini4i/atlantis-emoji-gate)](https://goreportcard.com/report/github.com/shini4i/atlantis-emoji-gate)
@@ -11,7 +13,7 @@
 </div>
 
 > [!WARNING]
-> This project is in the early stages of development and is not yet ready for production use.
+> This project is in the early stages of development and is not yet ready for production use. Some breaking changes may occur.
 
 ## General information
 

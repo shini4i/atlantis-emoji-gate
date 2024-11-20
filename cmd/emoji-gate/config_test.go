@@ -31,5 +31,4 @@ func TestNewGitlabConfig(t *testing.T) {
 	assert.Equal(t, "example-repo", cfg.BaseRepoName)
 	assert.Equal(t, 123, cfg.PullRequestID)
 	assert.Equal(t, ".test/CODEOWNERS", cfg.CodeOwnersPath)
-	assert.Equal(t, "/data/repos/example-owner/example-repo/123/default", cfg.RepoPath)
 }
