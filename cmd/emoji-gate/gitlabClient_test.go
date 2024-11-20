@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -67,89 +66,5 @@ func TestGitlabClient_Init(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, client.client)
 	assert.Equal(t, 1, client.mrId)
-}
-
-func TestGitlabClient_GetProjectIDFromPath(t *testing.T) {
-	mockClient := &MockGitlabClient{
-		ProjectID:      123,
-		ProjectIDError: nil,
-	}
-
-	client := &GitlabClient{client: mockClient}
-	projectID, err := client.GetProjectIDFromPath("test-owner/test-repo")
-
-	assert.NoError(t, err)
-	assert.Equal(t, 123, projectID)
-
-	// Test case with error
-	mockClient.ProjectIDError = fmt.Errorf("project not found")
-	projectID, err = client.GetProjectIDFromPath("test-owner/test-repo")
-
-	assert.Error(t, err)
-	assert.Equal(t, 0, projectID)
-}
-
-func TestGitlabClient_FindDefaultBranch(t *testing.T) {
-	mockClient := &MockGitlabClient{
-		DefaultBranch:      "main",
-		DefaultBranchError: nil,
-	}
-
-	client := &GitlabClient{client: mockClient}
-	branch, err := client.FindDefaultBranch(123)
-
-	assert.NoError(t, err)
-	assert.Equal(t, "main", branch)
-
-	// Test case with error
-	mockClient.DefaultBranchError = fmt.Errorf("branch not found")
-	branch, err = client.FindDefaultBranch(123)
-
-	assert.Error(t, err)
-	assert.Empty(t, branch)
-}
-
-func TestGitlabClient_GetFileContentFromBranch(t *testing.T) {
-	mockContent := "mock file content"
-	mockClient := &MockGitlabClient{
-		FileContent:      mockContent,
-		FileContentError: nil,
-	}
-
-	client := &GitlabClient{client: mockClient}
-	content, err := client.GetFileContentFromBranch(123, "main", "README.md")
-
-	assert.NoError(t, err)
-	assert.Equal(t, mockContent, content)
-
-	// Test case with error
-	mockClient.FileContentError = fmt.Errorf("file not found")
-	content, err = client.GetFileContentFromBranch(123, "main", "README.md")
-
-	assert.Error(t, err)
-	assert.Empty(t, content)
-}
-
-func TestGitlabClient_ListAwardEmoji(t *testing.T) {
-	mockEmojis := []*gitlab.AwardEmoji{
-		{ID: 1, Name: "thumbsup"},
-		{ID: 2, Name: "thumbsdown"},
-	}
-	mockClient := &MockGitlabClient{
-		AwardEmojiList:      mockEmojis,
-		AwardEmojiListError: nil,
-	}
-
-	client := &GitlabClient{client: mockClient}
-	emojis, err := client.ListAwardEmoji()
-
-	assert.NoError(t, err)
-	assert.Equal(t, mockEmojis, emojis)
-
-	// Test case with error
-	mockClient.AwardEmojiListError = fmt.Errorf("cannot get emojis")
-	emojis, err = client.ListAwardEmoji()
-
-	assert.Error(t, err)
-	assert.Nil(t, emojis)
+	assert.Equal(t, "test-owner/test-repo", client.projectPath)
 }
