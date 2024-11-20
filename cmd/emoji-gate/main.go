@@ -113,11 +113,8 @@ func Run(client GitlabClientInterface, cfg *GitlabConfig) int {
 	}
 
 	if approved {
-		log.Println("Merge Request approved")
 		return 0
 	}
-
-	log.Println("Merge Request not approved")
 	return 1
 }
 
