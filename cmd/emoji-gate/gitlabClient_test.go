@@ -1,70 +1,115 @@
 package main
 
 import (
+	"encoding/base64"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/xanzy/go-gitlab"
 )
 
-// MockGitlabClient implements GitlabClientInterface for testing purposes.
-type MockGitlabClient struct {
-	InitError           error
-	ProjectID           int
-	ProjectIDError      error
-	DefaultBranch       string
-	DefaultBranchError  error
-	FileContent         string
-	FileContentError    error
-	AwardEmojiList      []*gitlab.AwardEmoji
-	AwardEmojiListError error
+// mockGitLabServer sets up a mock GitLab API server with predefined responses.
+func mockGitLabServer() *httptest.Server {
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("/api/v4/projects/mockProjectPath", func(w http.ResponseWriter, r *http.Request) {
+		project := Project{
+			ID:            1,
+			DefaultBranch: "main",
+		}
+		response, _ := json.Marshal(project)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(response)
+	})
+
+	mux.HandleFunc("/api/v4/projects/1/merge_requests/1/award_emoji", func(w http.ResponseWriter, r *http.Request) {
+		emojis := []*AwardEmoji{
+			{Name: "thumbsup", User: struct {
+				Username string `json:"username"`
+			}{Username: "user1"}},
+		}
+		response, _ := json.Marshal(emojis)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(response)
+	})
+
+	mux.HandleFunc("/api/v4/projects/1/repository/files/CODEOWNERS", func(w http.ResponseWriter, r *http.Request) {
+		queryParams := r.URL.Query()
+		if queryParams.Get("ref") != "main" {
+			http.Error(w, "branch not found", http.StatusNotFound)
+			return
+		}
+
+		content := base64.StdEncoding.EncodeToString([]byte("* @user1\n"))
+		response, _ := json.Marshal(map[string]string{"content": content})
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(response)
+	})
+
+	return httptest.NewServer(mux)
 }
 
-func (m *MockGitlabClient) Init(cfg *GitlabConfig) error {
-	return m.InitError
-}
+func TestGitlabClient_GetProject(t *testing.T) {
+	server := mockGitLabServer()
+	defer server.Close()
 
-func (m *MockGitlabClient) GetProjectIDFromPath(path string) (int, error) {
-	if m.ProjectIDError != nil {
-		return 0, m.ProjectIDError
+	client := NewGitlabClient(server.URL[7:], "dummyToken")
+	client.Scheme = "http" // Use HTTP scheme for the test server
+
+	project, err := client.GetProject("mockProjectPath")
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
 	}
-	return m.ProjectID, nil
-}
 
-func (m *MockGitlabClient) FindDefaultBranch(projectID int) (string, error) {
-	if m.DefaultBranchError != nil {
-		return "", m.DefaultBranchError
-	}
-	return m.DefaultBranch, nil
-}
-
-func (m *MockGitlabClient) GetFileContentFromBranch(projectID int, branch, filePath string) (string, error) {
-	if m.FileContentError != nil {
-		return "", m.FileContentError
-	}
-	return m.FileContent, nil
-}
-
-func (m *MockGitlabClient) ListAwardEmoji() ([]*gitlab.AwardEmoji, error) {
-	if m.AwardEmojiListError != nil {
-		return nil, m.AwardEmojiListError
-	}
-	return m.AwardEmojiList, nil
-}
-
-func TestGitlabClient_Init(t *testing.T) {
-	client := &GitlabClient{}
-	cfg := &GitlabConfig{
-		Url:           "gitlab.example.com",
-		Token:         "mock-token",
-		BaseRepoOwner: "test-owner",
-		BaseRepoName:  "test-repo",
-		PullRequestID: 1,
+	if project.ID != 1 {
+		t.Errorf("Expected project ID 1, got %d", project.ID)
 	}
 
-	err := client.Init(cfg)
-	assert.NoError(t, err)
-	assert.NotNil(t, client.client)
-	assert.Equal(t, 1, client.mrId)
-	assert.Equal(t, "test-owner/test-repo", client.projectPath)
+	if project.DefaultBranch != "main" {
+		t.Errorf("Expected default branch 'main', got %s", project.DefaultBranch)
+	}
+}
+
+func TestGitlabClient_ListAwardEmojis(t *testing.T) {
+	server := mockGitLabServer()
+	defer server.Close()
+
+	client := NewGitlabClient(server.URL[7:], "dummyToken")
+	client.Scheme = "http" // Use HTTP scheme for the test server
+	client.ProjectID = 1
+
+	emojis, err := client.ListAwardEmojis(1)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	if len(emojis) != 1 {
+		t.Fatalf("Expected 1 emoji, got %d", len(emojis))
+	}
+
+	if emojis[0].Name != "thumbsup" || emojis[0].User.Username != "user1" {
+		t.Errorf("Got unexpected emoji data: %+v", emojis[0])
+	}
+}
+
+func TestGitlabClient_GetFileContent(t *testing.T) {
+	server := mockGitLabServer()
+	defer server.Close()
+
+	client := NewGitlabClient(server.URL[7:], "dummyToken")
+	client.Scheme = "http" // Use HTTP scheme for the test server
+	client.ProjectID = 1
+
+	content, err := client.GetFileContent("main", "CODEOWNERS")
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	expectedContent := "* @user1\n"
+	if content != expectedContent {
+		t.Errorf("Expected file content %q, got %q", expectedContent, content)
+	}
 }
