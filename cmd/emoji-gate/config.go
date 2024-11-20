@@ -14,10 +14,10 @@ type GitlabConfig struct {
 	Insecure       bool   `env:"INSECURE,notEmpty" envDefault:"false"` // If MR author allowed to approve his own MR
 }
 
-func NewGitlabConfig() GitlabConfig {
+func NewGitlabConfig() (GitlabConfig, error) {
 	if cfg, err := envConfig.ParseAs[GitlabConfig](); err != nil {
-		panic(err)
+		return GitlabConfig{}, err
 	} else {
-		return cfg
+		return cfg, nil
 	}
 }

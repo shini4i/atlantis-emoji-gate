@@ -7,62 +7,87 @@ import (
 	"github.com/xanzy/go-gitlab"
 )
 
-// GitlabClientInterface defines the methods required for interacting with GitLab.
-type GitlabClientInterface interface {
-	Init(cfg *GitlabConfig) error
-	GetProjectIDFromPath(path string) (int, error)
-	FindDefaultBranch(projectID int) (string, error)
-	GetFileContentFromBranch(projectID int, branch, filePath string) (string, error)
-	ListAwardEmoji() ([]*gitlab.AwardEmoji, error)
-}
-
+// GitlabClient implements GitlabClientInterface using go-gitlab client.
 type GitlabClient struct {
-	client      *gitlab.Client
-	mrId        int
-	projectPath string
+	client GitlabClientInterface
+	mrId   int
 }
 
 // Init initializes the GitLab client.
 func (g *GitlabClient) Init(cfg *GitlabConfig) error {
+	if g.client == nil {
+		realClient := &realGitlabClient{}
+		err := realClient.Init(cfg)
+		if err != nil {
+			return err
+		}
+		g.client = realClient
+	}
+	g.mrId = cfg.PullRequestID
+	return nil
+}
+
+func (g *GitlabClient) GetProjectIDFromPath(path string) (int, error) {
+	return g.client.GetProjectIDFromPath(path)
+}
+
+func (g *GitlabClient) FindDefaultBranch(projectID int) (string, error) {
+	return g.client.FindDefaultBranch(projectID)
+}
+
+func (g *GitlabClient) GetFileContentFromBranch(projectID int, branch, filePath string) (string, error) {
+	return g.client.GetFileContentFromBranch(projectID, branch, filePath)
+}
+
+func (g *GitlabClient) ListAwardEmoji() ([]*gitlab.AwardEmoji, error) {
+	return g.client.ListAwardEmoji()
+}
+
+// realGitlabClient wraps an instance of gitlab.Client.
+type realGitlabClient struct {
+	client          *gitlab.Client
+	projects        *gitlab.ProjectsService
+	repositoryFiles *gitlab.RepositoryFilesService
+	awardEmoji      *gitlab.AwardEmojiService
+	projectPath     string
+	mrId            int
+}
+
+func (r *realGitlabClient) Init(cfg *GitlabConfig) error {
 	gitlabUrl := fmt.Sprintf("%s://%s", "https", cfg.Url)
 	client, err := gitlab.NewClient(cfg.Token, gitlab.WithBaseURL(gitlabUrl))
 	if err != nil {
 		return err
 	}
 
-	g.client = client
-	g.mrId = cfg.PullRequestID
-	g.projectPath = fmt.Sprintf("%s/%s", cfg.BaseRepoOwner, cfg.BaseRepoName)
-
+	r.client = client
+	r.projects = r.client.Projects
+	r.repositoryFiles = r.client.RepositoryFiles
+	r.awardEmoji = r.client.AwardEmoji
+	r.mrId = cfg.PullRequestID
+	r.projectPath = fmt.Sprintf("%s/%s", cfg.BaseRepoOwner, cfg.BaseRepoName)
 	return nil
 }
 
-// GetProjectIDFromPath fetches the project ID for the given repository path.
-func (g *GitlabClient) GetProjectIDFromPath(path string) (int, error) {
-	project, _, err := g.client.Projects.GetProject(path, nil)
+func (r *realGitlabClient) GetProjectIDFromPath(path string) (int, error) {
+	project, _, err := r.projects.GetProject(path, nil)
 	if err != nil {
 		return 0, err
 	}
-
 	return project.ID, nil
 }
 
-// FindDefaultBranch retrieves the default branch for a given project ID.
-func (g *GitlabClient) FindDefaultBranch(projectID int) (string, error) {
-	project, _, err := g.client.Projects.GetProject(projectID, nil)
+func (r *realGitlabClient) FindDefaultBranch(projectID int) (string, error) {
+	project, _, err := r.projects.GetProject(projectID, nil)
 	if err != nil {
 		return "", err
 	}
-
 	return project.DefaultBranch, nil
 }
 
-// GetFileContentFromBranch retrieves the content of a specific file from a branch.
-func (g *GitlabClient) GetFileContentFromBranch(projectID int, branch, filePath string) (string, error) {
-	opt := &gitlab.GetFileOptions{
-		Ref: gitlab.Ptr(branch),
-	}
-	file, _, err := g.client.RepositoryFiles.GetFile(projectID, filePath, opt)
+func (r *realGitlabClient) GetFileContentFromBranch(projectID int, branch, filePath string) (string, error) {
+	opt := &gitlab.GetFileOptions{Ref: gitlab.Ptr(branch)}
+	file, _, err := r.repositoryFiles.GetFile(projectID, filePath, opt)
 	if err != nil {
 		return "", err
 	}
@@ -75,14 +100,13 @@ func (g *GitlabClient) GetFileContentFromBranch(projectID int, branch, filePath 
 	return string(decodedContent), nil
 }
 
-// ListAwardEmoji fetches all reactions (emojis) on the current Merge Request.
-func (g *GitlabClient) ListAwardEmoji() ([]*gitlab.AwardEmoji, error) {
-	project, _, err := g.client.Projects.GetProject(g.projectPath, nil)
+func (r *realGitlabClient) ListAwardEmoji() ([]*gitlab.AwardEmoji, error) {
+	project, _, err := r.projects.GetProject(r.projectPath, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	reactions, _, err := g.client.AwardEmoji.ListMergeRequestAwardEmoji(project.ID, g.mrId, nil)
+	reactions, _, err := r.awardEmoji.ListMergeRequestAwardEmoji(project.ID, r.mrId, nil)
 	if err != nil {
 		return nil, err
 	}

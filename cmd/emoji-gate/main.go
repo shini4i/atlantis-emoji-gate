@@ -119,7 +119,10 @@ func Run(client GitlabClientInterface, cfg *GitlabConfig) int {
 }
 
 func main() {
-	cfg := NewGitlabConfig()
+	cfg, err := NewGitlabConfig()
+	if err != nil {
+		log.Fatalf("Error parsing GitLab config: %v", err)
+	}
 	client := &GitlabClient{}
 
 	// Run the application and use the returned exit code.
