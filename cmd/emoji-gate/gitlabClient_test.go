@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // mockGitLabServer sets up a mock GitLab API server with predefined responses.
@@ -60,17 +62,9 @@ func TestGitlabClient_GetProject(t *testing.T) {
 	client.Scheme = "http" // Use HTTP scheme for the test server
 
 	project, err := client.GetProject("mockProjectPath")
-	if err != nil {
-		t.Fatalf("Expected no error, got %v", err)
-	}
-
-	if project.ID != 1 {
-		t.Errorf("Expected project ID 1, got %d", project.ID)
-	}
-
-	if project.DefaultBranch != "main" {
-		t.Errorf("Expected default branch 'main', got %s", project.DefaultBranch)
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, 1, project.ID)
+	assert.Equal(t, "main", project.DefaultBranch)
 }
 
 func TestGitlabClient_ListAwardEmojis(t *testing.T) {
@@ -82,17 +76,10 @@ func TestGitlabClient_ListAwardEmojis(t *testing.T) {
 	client.ProjectID = 1
 
 	emojis, err := client.ListAwardEmojis(1)
-	if err != nil {
-		t.Fatalf("Expected no error, got %v", err)
-	}
-
-	if len(emojis) != 1 {
-		t.Fatalf("Expected 1 emoji, got %d", len(emojis))
-	}
-
-	if emojis[0].Name != "thumbsup" || emojis[0].User.Username != "user1" {
-		t.Errorf("Got unexpected emoji data: %+v", emojis[0])
-	}
+	assert.NoError(t, err)
+	assert.Len(t, emojis, 1)
+	assert.Equal(t, "thumbsup", emojis[0].Name)
+	assert.Equal(t, "user1", emojis[0].User.Username)
 }
 
 func TestGitlabClient_GetFileContent(t *testing.T) {
@@ -109,7 +96,5 @@ func TestGitlabClient_GetFileContent(t *testing.T) {
 	}
 
 	expectedContent := "* @user1\n"
-	if content != expectedContent {
-		t.Errorf("Expected file content %q, got %q", expectedContent, content)
-	}
+	assert.Equal(t, expectedContent, content)
 }
