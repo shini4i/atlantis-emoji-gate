@@ -13,32 +13,58 @@
 </div>
 
 > [!WARNING]
-> This project is in the early stages of development and is not yet ready for production use. Some breaking changes may occur.
+> This project is in the early stages of development. Some breaking changes may occur.
 
 ## General information
 
-`atlantis-emoji-gate` is a tool designed to work with Atlantis on GitLab Community Edition (CE) to ensure that a specific emoji reaction is present on a GitLab merge request.
+`atlantis-emoji-gate` is a tool designed to work with Atlantis on GitLab Community Edition (CE) to ensure that a
+specific emoji reaction is present on a GitLab merge request.
 
-This acts as a replacement for mandatory MR approval (which does not work on CE), and can be used to ensure that a specific person has reviewed the MR before `atlantis apply` is allowed to run.
+This acts as a replacement for mandatory MR approval (which does not work on CE), and can be used to ensure that a
+specific person has reviewed the MR before `atlantis apply` is allowed to run.
+
+```mermaid
+graph LR
+    A[MR is Opened] --> B[Atlantis plan is triggered]
+    B --> C[Atlantis adds comment to MR with details]
+    C --> D[User validates the result]
+    D --> E[User adds comment: atlantis apply]
+    E --> F[Atlantis runs atlantis-emoji-gate]
+    F --> G{Code owner added required emoji?}
+    G -->|Yes| H[Apply happens]
+    G -->|No| I[Apply fails]
+
+%% Style links
+    linkStyle 6 stroke:green,stroke-width:2px
+    linkStyle 7 stroke:red,stroke-width:2px
+```
 
 ## Configuration
 
 `atlantis-emoji-gate` is configured using environment variables. The following variables are available:
 
-- `APPROVE_EMOJI` - The emoji that must be present on the MR for `atlantis apply` to be allowed to run (default: `thumbsup`)
-- `CODEOWNERS_PATH` - The path to the CODEOWNERS file in the repository (default: `CODEOWNERS`)
-- `INSECURE` - If MR author is allowed to approve their own MR (default: `false`)
+| Variable          | Description                                                                        | Default      | Optional |
+|-------------------|------------------------------------------------------------------------------------|--------------|----------|
+| `APPROVE_EMOJI`   | The emoji that must be present on the MR for `atlantis apply` to be allowed to run | `thumbsup`   | No       |
+| `CODEOWNERS_PATH` | The path to the CODEOWNERS file in the repository                                  | `CODEOWNERS` | No       |
+| `CODEOWNERS_REPO` | The repository to check for CODEOWNERS file                                        |              | Yes      |
+| `INSECURE`        | If MR author is allowed to approve their own MR                                    | `false`      | No       |
 
 The remaining environment variables are set dynamically by Atlantis and should not be set manually.
 
 At this early stage, only owners of the whole repository are supported.
 
 CODEOWNERS file example:
+
 ```
 * @username @username2
 ```
 
+> [!NOTE]
+> CODEOWNERS file is required to be present in the default branch of the repository.
+
 Workflow example:
+
 ```yaml
 workflows:
   default:
@@ -53,4 +79,5 @@ workflows:
 ```
 
 ## Contributing
+
 Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.

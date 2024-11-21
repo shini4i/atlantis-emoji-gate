@@ -10,6 +10,7 @@ type GitlabConfig struct {
 	BaseRepoName   string `env:"BASE_REPO_NAME,required,notEmpty"`
 	PullRequestID  int    `env:"PULL_NUM,required,notEmpty"`
 	CodeOwnersPath string `env:"CODEOWNERS_PATH,notEmpty" envDefault:"CODEOWNERS"`
+	CodeOwnersRepo string `env:"CODEOWNERS_REPO"` // Optional, if not provided, will use BaseRepoOwner/BaseRepoName
 	MrAuthor       string `env:"PULL_AUTHOR,required,notEmpty"`
 	Insecure       bool   `env:"INSECURE,notEmpty" envDefault:"false"` // If MR author allowed to approve his own MR
 }
