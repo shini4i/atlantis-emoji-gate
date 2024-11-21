@@ -73,9 +73,8 @@ func TestGitlabClient_ListAwardEmojis(t *testing.T) {
 
 	client := NewGitlabClient(server.URL[7:], "dummyToken")
 	client.Scheme = "http" // Use HTTP scheme for the test server
-	client.ProjectID = 1
 
-	emojis, err := client.ListAwardEmojis(1)
+	emojis, err := client.ListAwardEmojis(1, 1)
 	assert.NoError(t, err)
 	assert.Len(t, emojis, 1)
 	assert.Equal(t, "thumbsup", emojis[0].Name)
@@ -88,9 +87,8 @@ func TestGitlabClient_GetFileContent(t *testing.T) {
 
 	client := NewGitlabClient(server.URL[7:], "dummyToken")
 	client.Scheme = "http" // Use HTTP scheme for the test server
-	client.ProjectID = 1
 
-	content, err := client.GetFileContent("main", "CODEOWNERS")
+	content, err := client.GetFileContent(1, "main", "CODEOWNERS")
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}

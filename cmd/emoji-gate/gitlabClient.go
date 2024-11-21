@@ -12,16 +12,15 @@ import (
 // GitlabClientInterface defines the methods that must be implemented by a GitLab client.
 type GitlabClientInterface interface {
 	GetProject(projectPath string) (*Project, error)
-	ListAwardEmojis(mrID int) ([]*AwardEmoji, error)
-	GetFileContent(branch, filePath string) (string, error)
+	ListAwardEmojis(projectID, mrID int) ([]*AwardEmoji, error)
+	GetFileContent(projectID int, branch, filePath string) (string, error)
 }
 
 type GitlabClient struct {
-	Scheme    string
-	BaseURL   string
-	Token     string
-	ProjectID int
-	client    *http.Client
+	Scheme  string
+	BaseURL string
+	Token   string
+	client  *http.Client
 }
 
 type Project struct {
@@ -74,21 +73,20 @@ func (g *GitlabClient) GetProject(projectPath string) (*Project, error) {
 	escapedPath := url.PathEscape(projectPath)
 	var project Project
 	err := g.get(fmt.Sprintf("/projects/%s", escapedPath), &project)
-	g.ProjectID = project.ID
 	return &project, err
 }
 
-func (g *GitlabClient) ListAwardEmojis(mrID int) ([]*AwardEmoji, error) {
+func (g *GitlabClient) ListAwardEmojis(projectID, mrID int) ([]*AwardEmoji, error) {
 	var emojis []*AwardEmoji
-	err := g.get(fmt.Sprintf("/projects/%d/merge_requests/%d/award_emoji", g.ProjectID, mrID), &emojis)
+	err := g.get(fmt.Sprintf("/projects/%d/merge_requests/%d/award_emoji", projectID, mrID), &emojis)
 	return emojis, err
 }
 
-func (g *GitlabClient) GetFileContent(branch, filePath string) (string, error) {
+func (g *GitlabClient) GetFileContent(projectID int, branch, filePath string) (string, error) {
 	var content struct {
 		Content string `json:"content"`
 	}
-	err := g.get(fmt.Sprintf("/projects/%d/repository/files/%s?ref=%s", g.ProjectID, filePath, branch), &content)
+	err := g.get(fmt.Sprintf("/projects/%d/repository/files/%s?ref=%s", projectID, filePath, branch), &content)
 	if err != nil {
 		return "", err
 	}

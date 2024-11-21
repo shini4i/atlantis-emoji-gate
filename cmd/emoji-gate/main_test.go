@@ -20,11 +20,11 @@ func (m *MockGitlabClient) GetProject(projectPath string) (*Project, error) {
 	return m.Project, m.ProjectErr
 }
 
-func (m *MockGitlabClient) ListAwardEmojis(mrID int) ([]*AwardEmoji, error) {
+func (m *MockGitlabClient) ListAwardEmojis(projectID, mrID int) ([]*AwardEmoji, error) {
 	return m.AwardEmojis, m.EmojisErr
 }
 
-func (m *MockGitlabClient) GetFileContent(branch, filePath string) (string, error) {
+func (m *MockGitlabClient) GetFileContent(projectID int, branch, filePath string) (string, error) {
 	return m.FileContent, m.FileContentErr
 }
 
@@ -57,7 +57,7 @@ func TestCheckMandatoryApproval(t *testing.T) {
 
 	codeOwnersContent := "* @user1\n"
 
-	approved, err := CheckMandatoryApproval(mockClient, cfg, codeOwnersContent)
+	approved, err := CheckMandatoryApproval(mockClient, cfg, 1, codeOwnersContent)
 	assert.NoError(t, err)
 	assert.True(t, approved)
 }
