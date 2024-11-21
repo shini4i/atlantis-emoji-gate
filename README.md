@@ -32,7 +32,7 @@ graph LR
     E --> F[Atlantis runs atlantis-emoji-gate]
     F --> G{Code owner added required emoji?}
     G -->|Yes| H[Apply happens]
-    G -->|No| I[Apply fails]
+    G -->|No| I[Apply is aborted]
 
 %% Style links
     linkStyle 6 stroke:green,stroke-width:2px
