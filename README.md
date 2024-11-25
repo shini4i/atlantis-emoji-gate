@@ -56,6 +56,18 @@ At this early stage, only owners of the whole repository are supported.
 
 ### Permissions
 
+Given that we have the following repository structure:
+```
+.
+├── CODEOWNERS
+├── other_file.txt
+└── terraform
+    ├── deploy
+    │   └── main.tf
+    └── provision
+        └── main.tf
+```
+
 CODEOWNERS file example:
 
 ```
@@ -70,18 +82,6 @@ Where:
 - `@username2` would be able to approve MRs that change files in the `/terraform/provision` directory
 - `@username3` would be able to approve MRs that change files in the `/terraform/deploy` directory
 - `@username4` would be able to approve MRs that change files in both `/terraform/provision` and `/terraform/deploy` directories
-
-Given that we have the following repository structure:
-```
-.
-├── CODEOWNERS
-├── other_file.txt
-└── terraform
-    ├── deploy
-    │   └── main.tf
-    └── provision
-        └── main.tf
-```
 
 ### Workflow example
 
