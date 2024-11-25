@@ -74,7 +74,8 @@ Where:
 Given that we have the following repository structure:
 ```
 .
-├── random_file.txt
+├── CODEOWNERS
+├── other_file.txt
 └── terraform
     ├── deploy
     │   └── main.tf
