@@ -52,8 +52,6 @@ graph LR
 
 The remaining environment variables are set dynamically by Atlantis and should not be set manually.
 
-At this early stage, only owners of the whole repository are supported.
-
 ### Permissions
 
 Given that we have the following repository structure:
