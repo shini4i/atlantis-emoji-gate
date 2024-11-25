@@ -57,11 +57,10 @@ At this early stage, only owners of the whole repository are supported.
 CODEOWNERS file example:
 
 ```
-* @username @username2
+* @username1
+/terraform/provision @username2
+/terraform/deploy @username3
 ```
-
-> [!NOTE]
-> CODEOWNERS file is required to be present in the default branch of the repository.
 
 Workflow example:
 
