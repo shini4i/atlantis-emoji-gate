@@ -54,6 +54,8 @@ The remaining environment variables are set dynamically by Atlantis and should n
 
 At this early stage, only owners of the whole repository are supported.
 
+### Permissions
+
 CODEOWNERS file example:
 
 ```
@@ -69,7 +71,7 @@ Where:
 - `@username3` would be able to approve MRs that change files in the `/terraform/deploy` directory
 - `@username4` would be able to approve MRs that change files in both `/terraform/provision` and `/terraform/deploy` directories
 
-Workflow example:
+### Workflow example
 
 ```yaml
 workflows:
