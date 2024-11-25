@@ -58,9 +58,16 @@ CODEOWNERS file example:
 
 ```
 * @username1
+/terraform @username4
 /terraform/provision @username2
 /terraform/deploy @username3
 ```
+
+Where:
+- `@username1` would be able to approve any MR
+- `@username2` would be able to approve MRs that change files in the `/terraform/provision` directory
+- `@username3` would be able to approve MRs that change files in the `/terraform/deploy` directory
+- `@username4` would be able to approve MRs that change files in both `/terraform/provision` and `/terraform/deploy` directories
 
 Workflow example:
 
