@@ -31,9 +31,10 @@ func (m *MockGitlabClient) GetFileContent(projectID int, branch, filePath string
 // TestParseCodeOwners tests the parsing of the CODEOWNERS file.
 func TestParseCodeOwners(t *testing.T) {
 	content := "* @user1\n"
-	expectedOwners := []string{"user1"}
+	expectedOwners := []CodeOwner{{Owner: "user1", Path: "*"}}
+	codeOwnersProcessor := CodeOwnersProcessor{}
 
-	owners, err := ParseCodeOwners(content)
+	owners, err := codeOwnersProcessor.ParseCodeOwners(content)
 	assert.NoError(t, err)
 	assert.Equal(t, expectedOwners, owners)
 }
@@ -45,6 +46,7 @@ func TestCheckMandatoryApproval(t *testing.T) {
 		MrAuthor:      "author",
 		Insecure:      false,
 		PullRequestID: 1,
+		TerraformPath: ".",
 	}
 
 	mockClient := &MockGitlabClient{
@@ -72,6 +74,7 @@ func TestProcessMR(t *testing.T) {
 		PullRequestID:  1,
 		MrAuthor:       "author",
 		ApproveEmoji:   "thumbsup",
+		TerraformPath:  ".",
 	}
 
 	mockClient := &MockGitlabClient{
@@ -107,6 +110,7 @@ func TestRun(t *testing.T) {
 			MrAuthor:       "author",
 			ApproveEmoji:   "thumbsup",
 			PullRequestID:  1,
+			TerraformPath:  ".",
 		}
 
 		mockClient := &MockGitlabClient{
@@ -139,6 +143,7 @@ func TestRun(t *testing.T) {
 			MrAuthor:       "user1",
 			ApproveEmoji:   "thumbsup",
 			PullRequestID:  1,
+			TerraformPath:  ".",
 		}
 
 		mockClient := &MockGitlabClient{
