@@ -24,6 +24,7 @@ func TestNewGitlabConfig(t *testing.T) {
 		t.Setenv("CODEOWNERS_PATH", ".test/CODEOWNERS")
 		t.Setenv("ATLANTIS_DATA_DIR", "/data")
 		t.Setenv("WORKSPACE", "default")
+		t.Setenv("REPO_REL_DIR", "terraform/provision")
 
 		// Call the function to test
 		cfg, err := NewGitlabConfig()
@@ -39,5 +40,6 @@ func TestNewGitlabConfig(t *testing.T) {
 		assert.Equal(t, "example-repo", cfg.BaseRepoName)
 		assert.Equal(t, 123, cfg.PullRequestID)
 		assert.Equal(t, ".test/CODEOWNERS", cfg.CodeOwnersPath)
+		assert.Equal(t, "terraform/provision", cfg.TerraformPath)
 	})
 }

@@ -54,16 +54,36 @@ The remaining environment variables are set dynamically by Atlantis and should n
 
 At this early stage, only owners of the whole repository are supported.
 
+### Permissions
+
+Given that we have the following repository structure:
+```
+.
+├── CODEOWNERS
+├── other_file.txt
+└── terraform
+    ├── deploy
+    │   └── main.tf
+    └── provision
+        └── main.tf
+```
+
 CODEOWNERS file example:
 
 ```
-* @username @username2
+* @username1
+/terraform @username4
+/terraform/provision @username2
+/terraform/deploy @username3
 ```
 
-> [!NOTE]
-> CODEOWNERS file is required to be present in the default branch of the repository.
+Where:
+- `@username1` would be able to approve any MR
+- `@username2` would be able to approve MRs that change files in the `/terraform/provision` directory
+- `@username3` would be able to approve MRs that change files in the `/terraform/deploy` directory
+- `@username4` would be able to approve MRs that change files in both `/terraform/provision` and `/terraform/deploy` directories
 
-Workflow example:
+### Workflow example
 
 ```yaml
 workflows:

@@ -31,9 +31,10 @@ func (m *MockGitlabClient) GetFileContent(projectID int, branch, filePath string
 // TestParseCodeOwners tests the parsing of the CODEOWNERS file.
 func TestParseCodeOwners(t *testing.T) {
 	content := "* @user1\n"
-	expectedOwners := []string{"user1"}
+	expectedOwners := []CodeOwner{{Owner: "user1", Path: "*"}}
+	codeOwnersProcessor := CodeOwnersProcessor{}
 
-	owners, err := ParseCodeOwners(content)
+	owners, err := codeOwnersProcessor.ParseCodeOwners(content)
 	assert.NoError(t, err)
 	assert.Equal(t, expectedOwners, owners)
 }
@@ -45,6 +46,7 @@ func TestCheckMandatoryApproval(t *testing.T) {
 		MrAuthor:      "author",
 		Insecure:      false,
 		PullRequestID: 1,
+		TerraformPath: ".",
 	}
 
 	mockClient := &MockGitlabClient{
@@ -72,6 +74,7 @@ func TestProcessMR(t *testing.T) {
 		PullRequestID:  1,
 		MrAuthor:       "author",
 		ApproveEmoji:   "thumbsup",
+		TerraformPath:  ".",
 	}
 
 	mockClient := &MockGitlabClient{
@@ -107,6 +110,7 @@ func TestRun(t *testing.T) {
 			MrAuthor:       "author",
 			ApproveEmoji:   "thumbsup",
 			PullRequestID:  1,
+			TerraformPath:  ".",
 		}
 
 		mockClient := &MockGitlabClient{
@@ -139,6 +143,7 @@ func TestRun(t *testing.T) {
 			MrAuthor:       "user1",
 			ApproveEmoji:   "thumbsup",
 			PullRequestID:  1,
+			TerraformPath:  ".",
 		}
 
 		mockClient := &MockGitlabClient{
@@ -160,5 +165,58 @@ func TestRun(t *testing.T) {
 
 		exitCode := Run(mockClient, cfg)
 		assert.Equalf(t, 1, exitCode, "Expected exit code 1, got %d", exitCode)
+	})
+}
+
+// TestCanApprove tests the CanApprove function.
+func TestCanApprove(t *testing.T) {
+	cfg := GitlabConfig{
+		ApproveEmoji:  "thumbsup",
+		MrAuthor:      "author",
+		Insecure:      false,
+		TerraformPath: ".",
+	}
+
+	codeOwnersProcessor := CodeOwnersProcessor{}
+
+	t.Run("Owner does not match", func(t *testing.T) {
+		owner := CodeOwner{Owner: "user2", Path: "*"}
+		reaction := &AwardEmoji{Name: "thumbsup", User: struct {
+			Username string `json:"username"`
+		}{Username: "user1"}}
+
+		canApprove := codeOwnersProcessor.CanApprove(owner, reaction, cfg)
+		assert.False(t, canApprove)
+	})
+
+	t.Run("Emoji does not match", func(t *testing.T) {
+		owner := CodeOwner{Owner: "user1", Path: "*"}
+		reaction := &AwardEmoji{Name: "thumbsdown", User: struct {
+			Username string `json:"username"`
+		}{Username: "user1"}}
+
+		canApprove := codeOwnersProcessor.CanApprove(owner, reaction, cfg)
+		assert.False(t, canApprove)
+	})
+
+	t.Run("MR author cannot approve their own MR", func(t *testing.T) {
+		owner := CodeOwner{Owner: "author", Path: "*"}
+		reaction := &AwardEmoji{Name: "thumbsup", User: struct {
+			Username string `json:"username"`
+		}{Username: "author"}}
+
+		canApprove := codeOwnersProcessor.CanApprove(owner, reaction, cfg)
+		assert.False(t, canApprove)
+	})
+
+	t.Run("Path does not match", func(t *testing.T) {
+		owner := CodeOwner{Owner: "user1", Path: "non-matching-path"}
+		reaction := &AwardEmoji{Name: "thumbsup", User: struct {
+			Username string `json:"username"`
+		}{Username: "user1"}}
+
+		cfg.TerraformPath = "different-path"
+		canApprove := codeOwnersProcessor.CanApprove(owner, reaction, cfg)
+		assert.False(t, canApprove)
 	})
 }

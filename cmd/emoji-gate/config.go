@@ -9,6 +9,7 @@ type GitlabConfig struct {
 	BaseRepoOwner  string `env:"BASE_REPO_OWNER,required,notEmpty"`
 	BaseRepoName   string `env:"BASE_REPO_NAME,required,notEmpty"`
 	PullRequestID  int    `env:"PULL_NUM,required,notEmpty"`
+	TerraformPath  string `env:"REPO_REL_DIR,required,notEmpty"`
 	CodeOwnersPath string `env:"CODEOWNERS_PATH,notEmpty" envDefault:"CODEOWNERS"`
 	CodeOwnersRepo string `env:"CODEOWNERS_REPO"` // Optional, if not provided, will use BaseRepoOwner/BaseRepoName
 	MrAuthor       string `env:"PULL_AUTHOR,required,notEmpty"`
