@@ -1,37 +1,11 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"os"
-	"slices"
-	"strings"
 )
 
-// ParseCodeOwners extracts owners for the global pattern '*' from the CODEOWNERS content.
-func ParseCodeOwners(content string) ([]string, error) {
-	var owners []string
-	scanner := bufio.NewScanner(strings.NewReader(content))
-
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-
-		parts := strings.Fields(line)
-		if len(parts) >= 2 && parts[0] == "*" {
-			for _, owner := range parts[1:] {
-				owners = append(owners, strings.TrimPrefix(owner, "@"))
-			}
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error reading CODEOWNERS content: %w", err)
-	}
-	return owners, nil
-}
+var codeOwnersProcessor = CodeOwnersProcessor{}
 
 // fetchCodeOwnersContent retrieves the CODEOWNERS file content based on configuration.
 func fetchCodeOwnersContent(client GitlabClientInterface, cfg GitlabConfig, project *Project) (string, error) {
@@ -47,7 +21,7 @@ func fetchCodeOwnersContent(client GitlabClientInterface, cfg GitlabConfig, proj
 
 // CheckMandatoryApproval validates approvals against CODEOWNERS.
 func CheckMandatoryApproval(client GitlabClientInterface, cfg GitlabConfig, projectID int, codeOwnersContent string) (bool, error) {
-	owners, err := ParseCodeOwners(codeOwnersContent)
+	owners, err := codeOwnersProcessor.ParseCodeOwners(codeOwnersContent)
 	if err != nil {
 		return false, fmt.Errorf("failed to parse CODEOWNERS: %w", err)
 	}
@@ -68,16 +42,14 @@ func CheckMandatoryApproval(client GitlabClientInterface, cfg GitlabConfig, proj
 }
 
 // filterApprovals identifies valid approvers from reactions.
-func filterApprovals(owners []string, reactions []*AwardEmoji, cfg GitlabConfig) []string {
+func filterApprovals(owners []CodeOwner, reactions []*AwardEmoji, cfg GitlabConfig) []string {
 	var approvedBy []string
 
 	for _, reaction := range reactions {
-		if slices.Contains(owners, reaction.User.Username) && reaction.Name == cfg.ApproveEmoji {
-			if reaction.User.Username == cfg.MrAuthor && !cfg.Insecure {
-				fmt.Printf("MR author '%s' cannot approve their own MR", cfg.MrAuthor)
-				continue
+		for _, owner := range owners {
+			if codeOwnersProcessor.CanApprove(owner, reaction, cfg) {
+				approvedBy = append(approvedBy, reaction.User.Username)
 			}
-			approvedBy = append(approvedBy, reaction.User.Username)
 		}
 	}
 
