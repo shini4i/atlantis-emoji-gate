@@ -71,6 +71,17 @@ Where:
 - `@username3` would be able to approve MRs that change files in the `/terraform/deploy` directory
 - `@username4` would be able to approve MRs that change files in both `/terraform/provision` and `/terraform/deploy` directories
 
+Given that we have the following repository structure:
+```
+.
+├── random_file.txt
+└── terraform
+    ├── deploy
+    │   └── main.tf
+    └── provision
+        └── main.tf
+```
+
 ### Workflow example
 
 ```yaml
