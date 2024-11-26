@@ -55,7 +55,7 @@ func (co *CodeOwnersProcessor) CanApprove(owner CodeOwner, reaction *AwardEmoji,
 		fmt.Printf("MR author '%s' cannot approve their own MR\n", cfg.MrAuthor)
 		return false
 	}
-	if ownerPath == "*" && terraformPath == "." || strings.HasPrefix(terraformPath, ownerPath) {
+	if ownerPath == "*" || strings.HasPrefix(terraformPath, ownerPath) {
 		return true
 	}
 	return false

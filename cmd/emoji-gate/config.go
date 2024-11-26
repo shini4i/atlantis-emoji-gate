@@ -1,6 +1,8 @@
 package main
 
-import envConfig "github.com/caarlos0/env/v11"
+import (
+	envConfig "github.com/caarlos0/env/v11"
+)
 
 type GitlabConfig struct {
 	Url            string `env:"ATLANTIS_GITLAB_HOSTNAME,required,notEmpty"`
