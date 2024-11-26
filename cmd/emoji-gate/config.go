@@ -18,6 +18,7 @@ type GitlabConfig struct {
 	Insecure       bool   `env:"INSECURE,notEmpty" envDefault:"false"` // If MR author allowed to approve his own MR
 }
 
+// NewGitlabConfig parses environment variables into GitlabConfig.
 func NewGitlabConfig() (GitlabConfig, error) {
 	if cfg, err := envConfig.ParseAs[GitlabConfig](); err != nil {
 		return GitlabConfig{}, err

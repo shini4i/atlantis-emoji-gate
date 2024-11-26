@@ -33,7 +33,7 @@ func CheckMandatoryApproval(client GitlabClientInterface, cfg GitlabConfig, proj
 
 	approvedBy := filterApprovals(owners, reactions, cfg)
 	if len(approvedBy) > 0 {
-		fmt.Printf("Mandatory approval provided by: %v", approvedBy)
+		fmt.Printf("Mandatory approval provided by: %v\n", approvedBy)
 		return true, nil
 	}
 
@@ -79,7 +79,7 @@ func Run(client GitlabClientInterface, cfg GitlabConfig) int {
 
 	approved, err := ProcessMR(client, cfg)
 	if err != nil {
-		fmt.Printf("Error processing MR: %v", err)
+		fmt.Printf("Error processing MR: %v\n", err)
 		return 1
 	}
 

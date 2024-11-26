@@ -12,9 +12,6 @@
 
 </div>
 
-> [!WARNING]
-> This project is in the early stages of development. Some breaking changes may occur.
-
 ## General information
 
 `atlantis-emoji-gate` is a tool designed to work with Atlantis on GitLab Community Edition (CE) to ensure that a

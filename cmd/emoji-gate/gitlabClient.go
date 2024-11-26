@@ -35,6 +35,7 @@ type AwardEmoji struct {
 	} `json:"user"`
 }
 
+// NewGitlabClient creates a new GitlabClient with the given base URL and token.
 func NewGitlabClient(baseURL, token string) *GitlabClient {
 	return &GitlabClient{
 		Scheme:  "https",
@@ -44,6 +45,7 @@ func NewGitlabClient(baseURL, token string) *GitlabClient {
 	}
 }
 
+// get sends a GET request to the specified path and decodes the response into the target.
 func (g *GitlabClient) get(path string, target interface{}) error {
 	req, err := http.NewRequest("GET", fmt.Sprintf("%s://%s/api/v4/%s", g.Scheme, g.BaseURL, path), nil)
 	if err != nil {
@@ -69,6 +71,7 @@ func (g *GitlabClient) get(path string, target interface{}) error {
 	return json.Unmarshal(body, target)
 }
 
+// GetProject retrieves the project details for the given project path.
 func (g *GitlabClient) GetProject(projectPath string) (*Project, error) {
 	escapedPath := url.PathEscape(projectPath)
 	var project Project
@@ -76,12 +79,14 @@ func (g *GitlabClient) GetProject(projectPath string) (*Project, error) {
 	return &project, err
 }
 
+// ListAwardEmojis lists all award emojis for the specified project and merge request.
 func (g *GitlabClient) ListAwardEmojis(projectID, mrID int) ([]*AwardEmoji, error) {
 	var emojis []*AwardEmoji
 	err := g.get(fmt.Sprintf("/projects/%d/merge_requests/%d/award_emoji", projectID, mrID), &emojis)
 	return emojis, err
 }
 
+// GetFileContent retrieves the content of the specified file in the given project and branch.
 func (g *GitlabClient) GetFileContent(projectID int, branch, filePath string) (string, error) {
 	var content struct {
 		Content string `json:"content"`

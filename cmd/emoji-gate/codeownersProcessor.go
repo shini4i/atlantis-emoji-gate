@@ -41,6 +41,7 @@ func (co *CodeOwnersProcessor) ParseCodeOwners(content string) ([]CodeOwner, err
 	return owners, nil
 }
 
+// CanApprove checks if a user can approve based on CODEOWNERS rules.
 func (co *CodeOwnersProcessor) CanApprove(owner CodeOwner, reaction *AwardEmoji, cfg GitlabConfig) bool {
 	ownerPath := strings.TrimPrefix(owner.Path, "/")
 	terraformPath := strings.TrimPrefix(cfg.TerraformPath, "/")
