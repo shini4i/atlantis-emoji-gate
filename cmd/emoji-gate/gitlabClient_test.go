@@ -380,3 +380,32 @@ func TestGitlabClient_GetFileContent_ErrorCases(t *testing.T) {
 		assert.Empty(t, content, "Expected content to be empty on failure")
 	})
 }
+
+func TestGitlabClient_GetFileContent_Base64DecodeFailure(t *testing.T) {
+	client := &GitlabClient{
+		Scheme:  "https",
+		BaseURL: "example.com",
+		Token:   "test-token",
+		client:  &http.Client{},
+	}
+
+	// Mock HTTP client to return an invalid base64 string
+	mockTransport := &MockRoundTripper{
+		RoundTripFunc: func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(`{"content":"!!invalid_base64_content!!"}`)),
+				Header:     make(http.Header),
+			}, nil
+		},
+	}
+
+	client.client = &http.Client{Transport: mockTransport}
+
+	// Execute GetFileContent
+	_, err := client.GetFileContent(123, "main", "file.txt")
+
+	// Assertions
+	assert.Error(t, err, "Expected an error for invalid base64 content")
+	assert.Contains(t, err.Error(), "failed to decode base64", "Expected error message to mention base64 decode failure")
+}

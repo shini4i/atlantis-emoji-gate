@@ -109,7 +109,7 @@ func (g *GitlabClient) GetFileContent(projectID int, branch, filePath string) (s
 	}
 	decodedContent, err := base64.StdEncoding.DecodeString(content.Content)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to decode base64 file content: %w", err)
 	}
 	return string(decodedContent), nil
 }
