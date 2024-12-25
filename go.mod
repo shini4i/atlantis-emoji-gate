@@ -2,7 +2,7 @@ module github.com/shini4i/atlantis-emoji-gate
 
 go 1.23
 
-toolchain go1.23.3
+toolchain go1.23.4
 
 require (
 	github.com/caarlos0/env/v11 v11.3.1

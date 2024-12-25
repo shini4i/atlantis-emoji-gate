@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"strings"
 )
 
@@ -14,9 +15,9 @@ type CodeOwner struct {
 }
 
 // ParseCodeOwners extracts all owners from the CODEOWNERS content.
-func (co *CodeOwnersProcessor) ParseCodeOwners(content string) ([]CodeOwner, error) {
+func (co *CodeOwnersProcessor) ParseCodeOwners(reader io.Reader) ([]CodeOwner, error) {
 	var owners []CodeOwner
-	scanner := bufio.NewScanner(strings.NewReader(content))
+	scanner := bufio.NewScanner(reader)
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -32,12 +33,15 @@ func (co *CodeOwnersProcessor) ParseCodeOwners(content string) ([]CodeOwner, err
 					Path:  parts[0],
 				})
 			}
+		} else {
+			fmt.Printf("Warning: Ignored malformed line: %s\n", line)
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("error reading CODEOWNERS content: %w", err)
 	}
+
 	return owners, nil
 }
 

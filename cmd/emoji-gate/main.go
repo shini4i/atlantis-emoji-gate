@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 )
 
 var codeOwnersProcessor = CodeOwnersProcessor{}
@@ -21,7 +22,7 @@ func fetchCodeOwnersContent(client GitlabClientInterface, cfg GitlabConfig, proj
 
 // CheckMandatoryApproval validates approvals against CODEOWNERS.
 func CheckMandatoryApproval(client GitlabClientInterface, cfg GitlabConfig, projectID int, codeOwnersContent string) (bool, error) {
-	owners, err := codeOwnersProcessor.ParseCodeOwners(codeOwnersContent)
+	owners, err := codeOwnersProcessor.ParseCodeOwners(strings.NewReader(codeOwnersContent))
 	if err != nil {
 		return false, fmt.Errorf("failed to parse CODEOWNERS: %w", err)
 	}

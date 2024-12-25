@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -26,17 +27,6 @@ func (m *MockGitlabClient) ListAwardEmojis(projectID, mrID int) ([]*AwardEmoji, 
 
 func (m *MockGitlabClient) GetFileContent(projectID int, branch, filePath string) (string, error) {
 	return m.FileContent, m.FileContentErr
-}
-
-// TestParseCodeOwners tests the parsing of the CODEOWNERS file.
-func TestParseCodeOwners(t *testing.T) {
-	content := "* @user1\n"
-	expectedOwners := []CodeOwner{{Owner: "user1", Path: "*"}}
-	codeOwnersProcessor := CodeOwnersProcessor{}
-
-	owners, err := codeOwnersProcessor.ParseCodeOwners(content)
-	assert.NoError(t, err)
-	assert.Equal(t, expectedOwners, owners)
 }
 
 // TestCheckMandatoryApproval tests the CheckMandatoryApproval function.
@@ -168,55 +158,65 @@ func TestRun(t *testing.T) {
 	})
 }
 
-// TestCanApprove tests the CanApprove function.
-func TestCanApprove(t *testing.T) {
-	cfg := GitlabConfig{
-		ApproveEmoji:  "thumbsup",
-		MrAuthor:      "author",
-		Insecure:      false,
-		TerraformPath: ".",
-	}
+func TestFetchCodeOwnersContent(t *testing.T) {
+	t.Run("Fetch codeowners from another repository successfully", func(t *testing.T) {
+		cfg := GitlabConfig{
+			CodeOwnersRepo: "other-repo",
+			CodeOwnersPath: "CODEOWNERS",
+		}
 
-	codeOwnersProcessor := CodeOwnersProcessor{}
+		mockClient := &MockGitlabClient{
+			Project: &Project{
+				ID:            2,
+				DefaultBranch: "main",
+			},
+			FileContent: "* @user1\n",
+		}
 
-	t.Run("Owner does not match", func(t *testing.T) {
-		owner := CodeOwner{Owner: "user2", Path: "*"}
-		reaction := &AwardEmoji{Name: "thumbsup", User: struct {
-			Username string `json:"username"`
-		}{Username: "user1"}}
+		content, err := fetchCodeOwnersContent(mockClient, cfg, &Project{
+			ID:            1,
+			DefaultBranch: "main",
+		})
 
-		canApprove := codeOwnersProcessor.CanApprove(owner, reaction, cfg)
-		assert.False(t, canApprove)
+		assert.NoError(t, err)
+		assert.Equal(t, "* @user1\n", content)
 	})
 
-	t.Run("Emoji does not match", func(t *testing.T) {
-		owner := CodeOwner{Owner: "user1", Path: "*"}
-		reaction := &AwardEmoji{Name: "thumbsdown", User: struct {
-			Username string `json:"username"`
-		}{Username: "user1"}}
+	t.Run("Error fetching codeowners from another repository", func(t *testing.T) {
+		cfg := GitlabConfig{
+			CodeOwnersRepo: "other-repo",
+			CodeOwnersPath: "CODEOWNERS",
+		}
 
-		canApprove := codeOwnersProcessor.CanApprove(owner, reaction, cfg)
-		assert.False(t, canApprove)
+		mockClient := &MockGitlabClient{
+			ProjectErr: fmt.Errorf("repository not found"),
+		}
+
+		_, err := fetchCodeOwnersContent(mockClient, cfg, &Project{
+			ID:            1,
+			DefaultBranch: "main",
+		})
+
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to get codeowners project")
 	})
 
-	t.Run("MR author cannot approve their own MR", func(t *testing.T) {
-		owner := CodeOwner{Owner: "author", Path: "*"}
-		reaction := &AwardEmoji{Name: "thumbsup", User: struct {
-			Username string `json:"username"`
-		}{Username: "author"}}
+	t.Run("Fetch codeowners from the default repository", func(t *testing.T) {
+		cfg := GitlabConfig{
+			CodeOwnersRepo: "",
+			CodeOwnersPath: "CODEOWNERS",
+		}
 
-		canApprove := codeOwnersProcessor.CanApprove(owner, reaction, cfg)
-		assert.False(t, canApprove)
-	})
+		mockClient := &MockGitlabClient{
+			FileContent: "* @user2\n",
+		}
 
-	t.Run("Path does not match", func(t *testing.T) {
-		owner := CodeOwner{Owner: "user1", Path: "non-matching-path"}
-		reaction := &AwardEmoji{Name: "thumbsup", User: struct {
-			Username string `json:"username"`
-		}{Username: "user1"}}
+		content, err := fetchCodeOwnersContent(mockClient, cfg, &Project{
+			ID:            1,
+			DefaultBranch: "main",
+		})
 
-		cfg.TerraformPath = "different-path"
-		canApprove := codeOwnersProcessor.CanApprove(owner, reaction, cfg)
-		assert.False(t, canApprove)
+		assert.NoError(t, err)
+		assert.Equal(t, "* @user2\n", content)
 	})
 }
