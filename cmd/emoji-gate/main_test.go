@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -154,5 +155,68 @@ func TestRun(t *testing.T) {
 
 		exitCode := Run(mockClient, cfg)
 		assert.Equalf(t, 1, exitCode, "Expected exit code 1, got %d", exitCode)
+	})
+}
+
+func TestFetchCodeOwnersContent(t *testing.T) {
+	t.Run("Fetch codeowners from another repository successfully", func(t *testing.T) {
+		cfg := GitlabConfig{
+			CodeOwnersRepo: "other-repo",
+			CodeOwnersPath: "CODEOWNERS",
+		}
+
+		mockClient := &MockGitlabClient{
+			Project: &Project{
+				ID:            2,
+				DefaultBranch: "main",
+			},
+			FileContent: "* @user1\n",
+		}
+
+		content, err := fetchCodeOwnersContent(mockClient, cfg, &Project{
+			ID:            1,
+			DefaultBranch: "main",
+		})
+
+		assert.NoError(t, err)
+		assert.Equal(t, "* @user1\n", content)
+	})
+
+	t.Run("Error fetching codeowners from another repository", func(t *testing.T) {
+		cfg := GitlabConfig{
+			CodeOwnersRepo: "other-repo",
+			CodeOwnersPath: "CODEOWNERS",
+		}
+
+		mockClient := &MockGitlabClient{
+			ProjectErr: fmt.Errorf("repository not found"),
+		}
+
+		_, err := fetchCodeOwnersContent(mockClient, cfg, &Project{
+			ID:            1,
+			DefaultBranch: "main",
+		})
+
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to get codeowners project")
+	})
+
+	t.Run("Fetch codeowners from the default repository", func(t *testing.T) {
+		cfg := GitlabConfig{
+			CodeOwnersRepo: "",
+			CodeOwnersPath: "CODEOWNERS",
+		}
+
+		mockClient := &MockGitlabClient{
+			FileContent: "* @user2\n",
+		}
+
+		content, err := fetchCodeOwnersContent(mockClient, cfg, &Project{
+			ID:            1,
+			DefaultBranch: "main",
+		})
+
+		assert.NoError(t, err)
+		assert.Equal(t, "* @user2\n", content)
 	})
 }
