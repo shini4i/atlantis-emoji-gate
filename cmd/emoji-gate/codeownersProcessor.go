@@ -33,12 +33,15 @@ func (co *CodeOwnersProcessor) ParseCodeOwners(reader io.Reader) ([]CodeOwner, e
 					Path:  parts[0],
 				})
 			}
+		} else {
+			fmt.Printf("Warning: Ignored malformed line: %s\n", line)
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("error reading CODEOWNERS content: %w", err)
 	}
+
 	return owners, nil
 }
 

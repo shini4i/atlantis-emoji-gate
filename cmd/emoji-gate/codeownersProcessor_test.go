@@ -1,11 +1,20 @@
 package main
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
+
+// FaultyReader simulates an error when reading content.
+type FaultyReader struct{}
+
+// Read always returns an error to simulate a faulty reader.
+func (f FaultyReader) Read(p []byte) (n int, err error) {
+	return 0, errors.New("simulated read error")
+}
 
 // TestCanApprove tests the CanApprove function.
 func TestCanApprove(t *testing.T) {
@@ -60,36 +69,47 @@ func TestCanApprove(t *testing.T) {
 	})
 }
 
-func TestParseCodeOwners(t *testing.T) {
-	codeOwnersProcessor := CodeOwnersProcessor{}
+func TestParseCodeOwnersErrors(t *testing.T) {
+	coProcessor := CodeOwnersProcessor{}
 
-	t.Run("Empty CODEOWNERS file", func(t *testing.T) {
-		content := ""
-		owners, err := codeOwnersProcessor.ParseCodeOwners(strings.NewReader(content))
-
-		assert.NoError(t, err)
-		assert.Empty(t, owners, "No owners should be parsed from an empty CODEOWNERS file")
+	t.Run("Scanner Error", func(t *testing.T) {
+		faultyReader := FaultyReader{}
+		_, err := coProcessor.ParseCodeOwners(&faultyReader)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "error reading CODEOWNERS content")
 	})
 
-	t.Run("Valid CODEOWNERS rules", func(t *testing.T) {
+	t.Run("Empty Content", func(t *testing.T) {
+		content := ""
+		owners, err := coProcessor.ParseCodeOwners(strings.NewReader(content))
+		assert.NoError(t, err) // Expect no error for empty content
+		assert.Empty(t, owners, "Owners should be empty for empty input")
+	})
+
+	t.Run("Malformed Lines", func(t *testing.T) {
 		content := `
-# Valid rule
-* @user1 @user2
-/docs @doc_owner
-/scripts @script_owner1 @script_owner2
-		`
+# Comment Only
+docs
+      `
+		owners, err := coProcessor.ParseCodeOwners(strings.NewReader(content))
+		assert.NoError(t, err)
+		assert.Empty(t, owners, "Malformed lines should not produce owners")
+	})
+
+	t.Run("Valid and Malformed Mixed", func(t *testing.T) {
+		content := `
+* @user1
+docs
+/scripts @user2
+#comment`
 
 		expectedOwners := []CodeOwner{
 			{Path: "*", Owner: "user1"},
-			{Path: "*", Owner: "user2"},
-			{Path: "/docs", Owner: "doc_owner"},
-			{Path: "/scripts", Owner: "script_owner1"},
-			{Path: "/scripts", Owner: "script_owner2"},
+			{Path: "/scripts", Owner: "user2"},
 		}
 
-		owners, err := codeOwnersProcessor.ParseCodeOwners(strings.NewReader(content))
-
+		owners, err := coProcessor.ParseCodeOwners(strings.NewReader(content))
 		assert.NoError(t, err)
-		assert.Equal(t, expectedOwners, owners, "Parsed owners data does not match expected output")
+		assert.Equal(t, expectedOwners, owners, "Only valid entries should be parsed")
 	})
 }
