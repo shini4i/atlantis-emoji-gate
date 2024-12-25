@@ -30,9 +30,11 @@ type Project struct {
 
 type AwardEmoji struct {
 	Name string `json:"name"`
-	User struct {
-		Username string `json:"username"`
-	} `json:"user"`
+	User User   `json:"user"`
+}
+
+type User struct {
+	Username string `json:"username"`
 }
 
 // NewGitlabClient creates a new GitlabClient with the given base URL and token.

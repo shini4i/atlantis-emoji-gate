@@ -20,7 +20,7 @@ func TestCanApprove(t *testing.T) {
 		ApproveEmoji:  "thumbsup",
 		MrAuthor:      "author",
 		Insecure:      false,
-		TerraformPath: ".",
+		TerraformPath: "matching-path/subdir",
 	}
 
 	codeOwnersProcessor := CodeOwnersProcessor{}
@@ -88,6 +88,48 @@ func TestCanApprove(t *testing.T) {
 			},
 			// We'll override TerraformPath to something else
 			tfPath:      "different-path",
+			wantApprove: false,
+		},
+		{
+			name: "Wildcard owner path matches everything",
+			owner: CodeOwner{
+				Owner: "user1",
+				Path:  "*",
+			},
+			reaction: &AwardEmoji{
+				Name: "thumbsup",
+				User: struct {
+					Username string `json:"username"`
+				}{Username: "user1"},
+			},
+			wantApprove: true,
+		},
+		{
+			name: "Terraform path matches owner path prefix",
+			owner: CodeOwner{
+				Owner: "user3",
+				Path:  "matching-path",
+			},
+			reaction: &AwardEmoji{
+				Name: "thumbsup",
+				User: struct {
+					Username string `json:"username"`
+				}{Username: "user3"},
+			},
+			wantApprove: true,
+		},
+		{
+			name: "Terraform path does not match owner path prefix",
+			owner: CodeOwner{
+				Owner: "user4",
+				Path:  "non-matching-path",
+			},
+			reaction: &AwardEmoji{
+				Name: "thumbsup",
+				User: struct {
+					Username string `json:"username"`
+				}{Username: "user4"},
+			},
 			wantApprove: false,
 		},
 	}
