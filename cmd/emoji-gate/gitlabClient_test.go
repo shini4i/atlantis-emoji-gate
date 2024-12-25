@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -95,4 +96,53 @@ func TestGitlabClient_GetFileContent(t *testing.T) {
 
 	expectedContent := "* @user1\n"
 	assert.Equal(t, expectedContent, content)
+}
+
+func TestGitlabClient_Get_ErrorCases(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Printf("DEBUG: Received request on path: %s\n", r.URL.Path) // Log request path
+
+		switch r.URL.Path {
+		case "/api/v4/error-status":
+			fmt.Println("DEBUG: Returning HTTP 500 response")
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte("Internal Server Error"))
+		case "/api/v4/invalid-json":
+			fmt.Println("DEBUG: Returning invalid JSON response")
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte("invalid-json-format"))
+		default:
+			fmt.Println("DEBUG: Returning HTTP 200 OK")
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer server.Close()
+
+	client := NewGitlabClient(server.URL[7:], "dummyToken")
+	client.Scheme = "http"
+
+	// Test case 1: HTTP request fails due to a simulated error
+	t.Run("HTTP request failure", func(t *testing.T) {
+		client := NewGitlabClient("invalid-url", "dummyToken")
+		var target interface{}
+		err := client.get("/invalid-path", &target)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to execute request", "Expected an error due to invalid URL")
+	})
+
+	// Test case 2: Server returns a non-2xx status code
+	t.Run("Non-successful status code", func(t *testing.T) {
+		var target interface{}
+		err := client.get("error-status", &target)
+		assert.Error(t, err, "Expected an error for non-2xx status code")
+		assert.Contains(t, err.Error(), "received non-200 response: 500 - Internal Server Error", "Expected error to include status code and message")
+	})
+
+	// Test case 3: Invalid JSON in response body
+	t.Run("Invalid JSON response", func(t *testing.T) {
+		var target interface{}
+		err := client.get("invalid-json", &target)
+		assert.Error(t, err, "Expected an error for invalid JSON response")
+		assert.Contains(t, err.Error(), "failed to unmarshal response", "Expected error to mention unmarshalling failure")
+	})
 }

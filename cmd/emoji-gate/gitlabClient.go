@@ -49,26 +49,38 @@ func NewGitlabClient(baseURL, token string) *GitlabClient {
 func (g *GitlabClient) get(path string, target interface{}) error {
 	req, err := http.NewRequest("GET", fmt.Sprintf("%s://%s/api/v4/%s", g.Scheme, g.BaseURL, path), nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Add("Private-Token", g.Token)
+
 	resp, err := g.client.Do(req)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to execute request: %w", err)
 	}
 	defer func(Body io.ReadCloser) {
-		err := Body.Close()
-		if err != nil {
-			fmt.Println(err)
+		if err := Body.Close(); err != nil {
+			fmt.Println("failed to close response body:", err)
 		}
 	}(resp.Body)
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return err
+	if resp.StatusCode != http.StatusOK {
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("received non-200 response: %d with failed body read: %w", resp.StatusCode, err)
+		}
+		return fmt.Errorf("received non-200 response: %d - %s", resp.StatusCode, string(body))
 	}
 
-	return json.Unmarshal(body, target)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	if err := json.Unmarshal(body, target); err != nil {
+		return fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	return nil
 }
 
 // GetProject retrieves the project details for the given project path.
