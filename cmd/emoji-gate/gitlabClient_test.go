@@ -11,6 +11,24 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+type MockRoundTripper struct {
+	RoundTripFunc func(req *http.Request) (*http.Response, error)
+}
+
+func (m *MockRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	return m.RoundTripFunc(req) // Calls the mock function
+}
+
+type FaultyReadCloser struct{}
+
+func (f *FaultyReadCloser) Read(p []byte) (n int, err error) {
+	return 0, fmt.Errorf("mocked read error")
+}
+
+func (f *FaultyReadCloser) Close() error {
+	return nil
+}
+
 // mockGitLabServer sets up a mock GitLab API server with predefined responses.
 func mockGitLabServer() *httptest.Server {
 	mux := http.NewServeMux()
@@ -104,15 +122,12 @@ func TestGitlabClient_Get_ErrorCases(t *testing.T) {
 
 		switch r.URL.Path {
 		case "/api/v4/error-status":
-			fmt.Println("DEBUG: Returning HTTP 500 response")
 			w.WriteHeader(http.StatusInternalServerError)
 			_, _ = w.Write([]byte("Internal Server Error"))
 		case "/api/v4/invalid-json":
-			fmt.Println("DEBUG: Returning invalid JSON response")
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte("invalid-json-format"))
 		default:
-			fmt.Println("DEBUG: Returning HTTP 200 OK")
 			w.WriteHeader(http.StatusOK)
 		}
 	}))
@@ -121,7 +136,39 @@ func TestGitlabClient_Get_ErrorCases(t *testing.T) {
 	client := NewGitlabClient(server.URL[7:], "dummyToken")
 	client.Scheme = "http"
 
-	// Test case 1: HTTP request fails due to a simulated error
+	// Test case 1: Failed to create request (invalid URL)
+	t.Run("failed to create request", func(t *testing.T) {
+		client := NewGitlabClient("%41:8080", "dummyToken")
+		client.Scheme = "http"
+
+		var target interface{}
+		err := client.get("test-path", &target)
+		assert.Error(t, err, "Expected an error when the request creation fails")
+		assert.Contains(t, err.Error(), "failed to create request", "Expected error to mention failed request creation")
+	})
+
+	// Test case 2: HTTP client fails to execute the request (simulated error) If this happens in the real world, it's likely due to network issues.
+	t.Run("failed to execute request", func(t *testing.T) {
+		// Create a mock HTTP client with a custom RoundTripper
+		mockTransport := &MockRoundTripper{
+			RoundTripFunc: func(req *http.Request) (*http.Response, error) {
+				return nil, fmt.Errorf("mocked client error")
+			},
+		}
+
+		client := NewGitlabClient("valid-url", "dummyToken")
+		client.Scheme = "http"
+		client.client = &http.Client{Transport: mockTransport}
+
+		var target interface{}
+		err := client.get("test-path", &target)
+
+		// Assertions
+		assert.Error(t, err, "Expected an error when the HTTP client fails")
+		assert.Contains(t, err.Error(), "failed to execute request", "Expected error to mention failed request execution")
+	})
+
+	// Test case 2: HTTP request fails due to a simulated error
 	t.Run("HTTP request failure", func(t *testing.T) {
 		client := NewGitlabClient("invalid-url", "dummyToken")
 		var target interface{}
@@ -130,7 +177,7 @@ func TestGitlabClient_Get_ErrorCases(t *testing.T) {
 		assert.Contains(t, err.Error(), "failed to execute request", "Expected an error due to invalid URL")
 	})
 
-	// Test case 2: Server returns a non-2xx status code
+	// Test case 3: Server returns a non-2xx status code
 	t.Run("Non-successful status code", func(t *testing.T) {
 		var target interface{}
 		err := client.get("error-status", &target)
@@ -138,11 +185,36 @@ func TestGitlabClient_Get_ErrorCases(t *testing.T) {
 		assert.Contains(t, err.Error(), "received non-200 response: 500 - Internal Server Error", "Expected error to include status code and message")
 	})
 
-	// Test case 3: Invalid JSON in response body
+	// Test case 4: Invalid JSON in response body
 	t.Run("Invalid JSON response", func(t *testing.T) {
 		var target interface{}
 		err := client.get("invalid-json", &target)
 		assert.Error(t, err, "Expected an error for invalid JSON response")
 		assert.Contains(t, err.Error(), "failed to unmarshal response", "Expected error to mention unmarshalling failure")
+	})
+
+	// Test case 5: Failed to read response body
+	t.Run("failed to read response body", func(t *testing.T) {
+		// Create a mock HTTP client with a custom RoundTripper
+		mockTransport := &MockRoundTripper{
+			RoundTripFunc: func(req *http.Request) (*http.Response, error) {
+				// Simulate a successful response with a faulty body reader
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       &FaultyReadCloser{},
+				}, nil
+			},
+		}
+
+		client := NewGitlabClient("valid-url", "dummyToken")
+		client.Scheme = "http"
+		client.client = &http.Client{Transport: mockTransport}
+
+		var target interface{}
+		err := client.get("test-path", &target)
+
+		// Assertions
+		assert.Error(t, err, "Expected an error when reading the response body fails")
+		assert.Contains(t, err.Error(), "failed to read response body", "Expected error to mention failed body read")
 	})
 }
