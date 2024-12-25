@@ -1,11 +1,19 @@
-package main
+package processor
 
 import (
 	"bufio"
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/shini4i/atlantis-emoji-gate/internal/client"
+	"github.com/shini4i/atlantis-emoji-gate/internal/config"
 )
+
+type CodeOwnersProcessorInterface interface {
+	ParseCodeOwners(reader io.Reader) ([]CodeOwner, error)
+	CanApprove(owner CodeOwner, reaction *client.AwardEmoji, cfg config.GitlabConfig) bool
+}
 
 type CodeOwnersProcessor struct{}
 
@@ -46,7 +54,7 @@ func (co *CodeOwnersProcessor) ParseCodeOwners(reader io.Reader) ([]CodeOwner, e
 }
 
 // CanApprove checks if a user can approve based on CODEOWNERS rules.
-func (co *CodeOwnersProcessor) CanApprove(owner CodeOwner, reaction *AwardEmoji, cfg GitlabConfig) bool {
+func (co *CodeOwnersProcessor) CanApprove(owner CodeOwner, reaction *client.AwardEmoji, cfg config.GitlabConfig) bool {
 	ownerPath := strings.TrimPrefix(owner.Path, "/")
 	terraformPath := strings.TrimPrefix(cfg.TerraformPath, "/")
 

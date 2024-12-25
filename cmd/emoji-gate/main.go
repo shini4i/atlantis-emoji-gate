@@ -2,18 +2,16 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"strings"
+
+	"github.com/shini4i/atlantis-emoji-gate/internal/client"
+	"github.com/shini4i/atlantis-emoji-gate/internal/config"
+	"github.com/shini4i/atlantis-emoji-gate/internal/processor"
 )
 
-type CodeOwnersProcessorInterface interface {
-	ParseCodeOwners(reader io.Reader) ([]CodeOwner, error)
-	CanApprove(owner CodeOwner, reaction *AwardEmoji, cfg GitlabConfig) bool
-}
-
 // fetchCodeOwnersContent retrieves the CODEOWNERS file content based on configuration.
-func fetchCodeOwnersContent(client GitlabClientInterface, cfg GitlabConfig, project *Project) (string, error) {
+func fetchCodeOwnersContent(client client.GitlabClientInterface, cfg config.GitlabConfig, project *client.Project) (string, error) {
 	if cfg.CodeOwnersRepo != "" {
 		codeOwnersRepo, err := client.GetProject(cfg.CodeOwnersRepo)
 		if err != nil {
@@ -25,7 +23,7 @@ func fetchCodeOwnersContent(client GitlabClientInterface, cfg GitlabConfig, proj
 }
 
 // CheckMandatoryApproval validates approvals against CODEOWNERS.
-func CheckMandatoryApproval(client GitlabClientInterface, cfg GitlabConfig, projectID int, codeOwnersContent string, processor CodeOwnersProcessorInterface) (bool, error) {
+func CheckMandatoryApproval(client client.GitlabClientInterface, cfg config.GitlabConfig, projectID int, codeOwnersContent string, processor processor.CodeOwnersProcessorInterface) (bool, error) {
 	owners, err := processor.ParseCodeOwners(strings.NewReader(codeOwnersContent))
 	if err != nil {
 		return false, fmt.Errorf("failed to parse CODEOWNERS: %w", err)
@@ -47,7 +45,7 @@ func CheckMandatoryApproval(client GitlabClientInterface, cfg GitlabConfig, proj
 }
 
 // filterApprovals identifies valid approvers from reactions.
-func filterApprovals(owners []CodeOwner, reactions []*AwardEmoji, cfg GitlabConfig, processor CodeOwnersProcessorInterface) []string {
+func filterApprovals(owners []processor.CodeOwner, reactions []*client.AwardEmoji, cfg config.GitlabConfig, processor processor.CodeOwnersProcessorInterface) []string {
 	var approvedBy []string
 
 	for _, reaction := range reactions {
@@ -62,7 +60,7 @@ func filterApprovals(owners []CodeOwner, reactions []*AwardEmoji, cfg GitlabConf
 }
 
 // ProcessMR handles the overall MR processing workflow.
-func ProcessMR(client GitlabClientInterface, cfg GitlabConfig, processor CodeOwnersProcessorInterface) (bool, error) {
+func ProcessMR(client client.GitlabClientInterface, cfg config.GitlabConfig, processor processor.CodeOwnersProcessorInterface) (bool, error) {
 	project, err := client.GetProject(fmt.Sprintf("%s/%s", cfg.BaseRepoOwner, cfg.BaseRepoName))
 	if err != nil {
 		return false, fmt.Errorf("failed to get project: %w", err)
@@ -77,7 +75,7 @@ func ProcessMR(client GitlabClientInterface, cfg GitlabConfig, processor CodeOwn
 }
 
 // Run handles the program's main logic.
-func Run(client GitlabClientInterface, cfg GitlabConfig, processor CodeOwnersProcessorInterface) int {
+func Run(client client.GitlabClientInterface, cfg config.GitlabConfig, processor processor.CodeOwnersProcessorInterface) int {
 	if cfg.Insecure {
 		fmt.Println("Insecure mode enabled: MR author can approve their own MR if they are in CODEOWNERS")
 	}
@@ -92,12 +90,12 @@ func Run(client GitlabClientInterface, cfg GitlabConfig, processor CodeOwnersPro
 }
 
 func main() {
-	cfg, err := NewGitlabConfig()
+	cfg, err := config.NewGitlabConfig()
 	if err != nil {
 		panic(fmt.Sprintf("Error parsing GitLab config: %v", err))
 	}
 
-	codeOwnersProcessor := &CodeOwnersProcessor{}
-	client := NewGitlabClient(cfg.Url, cfg.Token)
+	codeOwnersProcessor := &processor.CodeOwnersProcessor{}
+	client := client.NewGitlabClient(cfg.Url, cfg.Token)
 	os.Exit(Run(client, cfg, codeOwnersProcessor))
 }

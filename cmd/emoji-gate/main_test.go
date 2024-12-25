@@ -6,6 +6,10 @@ import (
 	"os"
 	"testing"
 
+	"github.com/shini4i/atlantis-emoji-gate/internal/client"
+	"github.com/shini4i/atlantis-emoji-gate/internal/config"
+	"github.com/shini4i/atlantis-emoji-gate/internal/processor"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -17,17 +21,17 @@ type MockCodeOwnersProcessor struct {
 	mock.Mock
 }
 
-func (m *MockCodeOwnersProcessor) ParseCodeOwners(reader io.Reader) ([]CodeOwner, error) {
+func (m *MockCodeOwnersProcessor) ParseCodeOwners(reader io.Reader) ([]processor.CodeOwner, error) {
 	args := m.Called(reader)
 	// Handle nil return for []CodeOwner to avoid panic
-	var owners []CodeOwner
+	var owners []processor.CodeOwner
 	if tmp := args.Get(0); tmp != nil {
-		owners = tmp.([]CodeOwner)
+		owners = tmp.([]processor.CodeOwner)
 	}
 	return owners, args.Error(1)
 }
 
-func (m *MockCodeOwnersProcessor) CanApprove(owner CodeOwner, reaction *AwardEmoji, cfg GitlabConfig) bool {
+func (m *MockCodeOwnersProcessor) CanApprove(owner processor.CodeOwner, reaction *client.AwardEmoji, cfg config.GitlabConfig) bool {
 	args := m.Called(owner, reaction, cfg)
 	return args.Bool(0)
 }
@@ -37,12 +41,12 @@ type MockGitlabClient struct {
 	mock.Mock
 }
 
-func (m *MockGitlabClient) GetProject(repo string) (*Project, error) {
+func (m *MockGitlabClient) GetProject(repo string) (*client.Project, error) {
 	args := m.Called(repo)
 	// Handle nil return for *Project to avoid panic
-	var project *Project
+	var project *client.Project
 	if tmp := args.Get(0); tmp != nil {
-		project = tmp.(*Project)
+		project = tmp.(*client.Project)
 	}
 	return project, args.Error(1)
 }
@@ -52,12 +56,12 @@ func (m *MockGitlabClient) GetFileContent(projectID int, branch string, path str
 	return args.String(0), args.Error(1)
 }
 
-func (m *MockGitlabClient) ListAwardEmojis(projectID int, pullRequestID int) ([]*AwardEmoji, error) {
+func (m *MockGitlabClient) ListAwardEmojis(projectID int, pullRequestID int) ([]*client.AwardEmoji, error) {
 	args := m.Called(projectID, pullRequestID)
 	// Handle nil return for []*AwardEmoji to avoid panic
-	var emojis []*AwardEmoji
+	var emojis []*client.AwardEmoji
 	if tmp := args.Get(0); tmp != nil {
-		emojis = tmp.([]*AwardEmoji)
+		emojis = tmp.([]*client.AwardEmoji)
 	}
 	return emojis, args.Error(1)
 }
@@ -68,17 +72,17 @@ func (m *MockGitlabClient) ListAwardEmojis(projectID int, pullRequestID int) ([]
 func TestFetchCodeOwnersContent_WithCodeOwnersRepo_Success(t *testing.T) {
 	// Initialize mocks
 	mockClient := new(MockGitlabClient)
-	cfg := GitlabConfig{
+	cfg := config.GitlabConfig{
 		CodeOwnersRepo: "codeowners/repo",
 		CodeOwnersPath: "/path/to/CODEOWNERS",
 	}
-	project := &Project{
+	project := &client.Project{
 		ID:            1,
 		DefaultBranch: "main",
 	}
 
 	// Mocked repository data
-	codeOwnersRepo := &Project{
+	codeOwnersRepo := &client.Project{
 		ID:            2,
 		DefaultBranch: "develop",
 	}
@@ -105,11 +109,11 @@ func TestFetchCodeOwnersContent_WithCodeOwnersRepo_Success(t *testing.T) {
 func TestFetchCodeOwnersContent_WithoutCodeOwnersRepo_Success(t *testing.T) {
 	// Initialize mocks
 	mockClient := new(MockGitlabClient)
-	cfg := GitlabConfig{
+	cfg := config.GitlabConfig{
 		CodeOwnersRepo: "",
 		CodeOwnersPath: "/path/to/CODEOWNERS",
 	}
-	project := &Project{
+	project := &client.Project{
 		ID:            1,
 		DefaultBranch: "main",
 	}
@@ -135,11 +139,11 @@ func TestFetchCodeOwnersContent_WithoutCodeOwnersRepo_Success(t *testing.T) {
 func TestFetchCodeOwnersContent_GetProjectError(t *testing.T) {
 	// Initialize mocks
 	mockClient := new(MockGitlabClient)
-	cfg := GitlabConfig{
+	cfg := config.GitlabConfig{
 		CodeOwnersRepo: "invalid/repo",
 		CodeOwnersPath: "/path/to/CODEOWNERS",
 	}
-	project := &Project{
+	project := &client.Project{
 		ID:            1,
 		DefaultBranch: "main",
 	}
@@ -162,17 +166,17 @@ func TestFetchCodeOwnersContent_GetProjectError(t *testing.T) {
 func TestFetchCodeOwnersContent_GetFileContentError(t *testing.T) {
 	// Initialize mocks
 	mockClient := new(MockGitlabClient)
-	cfg := GitlabConfig{
+	cfg := config.GitlabConfig{
 		CodeOwnersRepo: "codeowners/repo",
 		CodeOwnersPath: "/path/to/CODEOWNERS",
 	}
-	project := &Project{
+	project := &client.Project{
 		ID:            1,
 		DefaultBranch: "main",
 	}
 
 	// Mocked repository data
-	codeOwnersRepo := &Project{
+	codeOwnersRepo := &client.Project{
 		ID:            2,
 		DefaultBranch: "develop",
 	}
@@ -201,19 +205,19 @@ func TestCheckMandatoryApproval_WithApprovals(t *testing.T) {
 
 	// Sample data
 	projectID := 1
-	cfg := GitlabConfig{
+	cfg := config.GitlabConfig{
 		PullRequestID: 123,
 	}
 	codeOwnersContent := "sample content"
 
-	owners := []CodeOwner{
+	owners := []processor.CodeOwner{
 		{Owner: "owner1"},
 		{Owner: "owner2"},
 	}
 
-	reactions := []*AwardEmoji{
-		{User: User{Username: "user1"}},
-		{User: User{Username: "user2"}},
+	reactions := []*client.AwardEmoji{
+		{User: client.User{Username: "user1"}},
+		{User: client.User{Username: "user2"}},
 	}
 
 	// Setup expectations
@@ -245,17 +249,17 @@ func TestCheckMandatoryApproval_WithoutApprovals(t *testing.T) {
 
 	// Sample data
 	projectID := 1
-	cfg := GitlabConfig{
+	cfg := config.GitlabConfig{
 		PullRequestID: 123,
 	}
 	codeOwnersContent := "sample content"
 
-	owners := []CodeOwner{
+	owners := []processor.CodeOwner{
 		{Owner: "owner1"},
 	}
 
-	reactions := []*AwardEmoji{
-		{User: User{Username: "user1"}},
+	reactions := []*client.AwardEmoji{
+		{User: client.User{Username: "user1"}},
 	}
 
 	// Setup expectations
@@ -283,7 +287,7 @@ func TestCheckMandatoryApproval_ParseError(t *testing.T) {
 
 	// Sample data
 	projectID := 1
-	cfg := GitlabConfig{
+	cfg := config.GitlabConfig{
 		PullRequestID: 123,
 	}
 	codeOwnersContent := "invalid content"
@@ -312,12 +316,12 @@ func TestCheckMandatoryApproval_ListAwardEmojisError(t *testing.T) {
 
 	// Sample data
 	projectID := 1
-	cfg := GitlabConfig{
+	cfg := config.GitlabConfig{
 		PullRequestID: 123,
 	}
 	codeOwnersContent := "sample content"
 
-	owners := []CodeOwner{
+	owners := []processor.CodeOwner{
 		{Owner: "owner1"},
 	}
 
@@ -344,17 +348,17 @@ func TestFilterApprovals_WithValidApprovals(t *testing.T) {
 	mockProcessor := new(MockCodeOwnersProcessor)
 
 	// Sample data
-	owners := []CodeOwner{
+	owners := []processor.CodeOwner{
 		{Owner: "owner1"},
 		{Owner: "owner2"},
 	}
 
-	reactions := []*AwardEmoji{
-		{User: User{Username: "user1"}},
-		{User: User{Username: "user2"}},
+	reactions := []*client.AwardEmoji{
+		{User: client.User{Username: "user1"}},
+		{User: client.User{Username: "user2"}},
 	}
 
-	cfg := GitlabConfig{}
+	cfg := config.GitlabConfig{}
 
 	// Setup expectations for all combinations
 	mockProcessor.On("CanApprove", owners[0], reactions[0], cfg).Return(true)
@@ -379,15 +383,15 @@ func TestFilterApprovals_NoValidApprovals(t *testing.T) {
 	mockProcessor := new(MockCodeOwnersProcessor)
 
 	// Sample data
-	owners := []CodeOwner{
+	owners := []processor.CodeOwner{
 		{Owner: "owner1"},
 	}
 
-	reactions := []*AwardEmoji{
-		{User: User{Username: "user1"}},
+	reactions := []*client.AwardEmoji{
+		{User: client.User{Username: "user1"}},
 	}
 
-	cfg := GitlabConfig{}
+	cfg := config.GitlabConfig{}
 
 	// Setup expectations
 	mockProcessor.On("CanApprove", owners[0], reactions[0], cfg).Return(false)
@@ -410,13 +414,13 @@ func TestProcessMR_SuccessWithApprovals(t *testing.T) {
 	mockProcessor := new(MockCodeOwnersProcessor)
 
 	// Sample data
-	cfg := GitlabConfig{
+	cfg := config.GitlabConfig{
 		BaseRepoOwner:  "owner",
 		BaseRepoName:   "repo",
 		CodeOwnersPath: "/path/to/CODEOWNERS",
 		PullRequestID:  123,
 	}
-	project := &Project{
+	project := &client.Project{
 		ID:            1,
 		DefaultBranch: "main",
 	}
@@ -430,11 +434,11 @@ func TestProcessMR_SuccessWithApprovals(t *testing.T) {
 	mockClient.On("GetFileContent", project.ID, project.DefaultBranch, cfg.CodeOwnersPath).Return(codeOwnersContent, nil)
 
 	// Setup expectations for CheckMandatoryApproval
-	owners := []CodeOwner{
+	owners := []processor.CodeOwner{
 		{Owner: "owner1"},
 	}
-	reactions := []*AwardEmoji{
-		{User: User{Username: "user1"}},
+	reactions := []*client.AwardEmoji{
+		{User: client.User{Username: "user1"}},
 	}
 
 	mockProcessor.On("ParseCodeOwners", mock.Anything).Return(owners, nil)
@@ -460,13 +464,13 @@ func TestProcessMR_SuccessWithoutApprovals(t *testing.T) {
 	mockProcessor := new(MockCodeOwnersProcessor)
 
 	// Sample data
-	cfg := GitlabConfig{
+	cfg := config.GitlabConfig{
 		BaseRepoOwner:  "owner",
 		BaseRepoName:   "repo",
 		CodeOwnersPath: "/path/to/CODEOWNERS",
 		PullRequestID:  123,
 	}
-	project := &Project{
+	project := &client.Project{
 		ID:            1,
 		DefaultBranch: "main",
 	}
@@ -480,11 +484,11 @@ func TestProcessMR_SuccessWithoutApprovals(t *testing.T) {
 	mockClient.On("GetFileContent", project.ID, project.DefaultBranch, cfg.CodeOwnersPath).Return(codeOwnersContent, nil)
 
 	// Setup expectations for CheckMandatoryApproval
-	owners := []CodeOwner{
+	owners := []processor.CodeOwner{
 		{Owner: "owner1"},
 	}
-	reactions := []*AwardEmoji{
-		{User: User{Username: "user1"}},
+	reactions := []*client.AwardEmoji{
+		{User: client.User{Username: "user1"}},
 	}
 
 	mockProcessor.On("ParseCodeOwners", mock.Anything).Return(owners, nil)
@@ -510,7 +514,7 @@ func TestProcessMR_GetProjectError(t *testing.T) {
 	mockProcessor := new(MockCodeOwnersProcessor)
 
 	// Sample data
-	cfg := GitlabConfig{
+	cfg := config.GitlabConfig{
 		BaseRepoOwner:  "owner",
 		BaseRepoName:   "repo",
 		CodeOwnersPath: "/path/to/CODEOWNERS",
@@ -540,13 +544,13 @@ func TestProcessMR_FetchCodeOwnersError(t *testing.T) {
 	mockProcessor := new(MockCodeOwnersProcessor)
 
 	// Sample data
-	cfg := GitlabConfig{
+	cfg := config.GitlabConfig{
 		BaseRepoOwner:  "owner",
 		BaseRepoName:   "repo",
 		CodeOwnersPath: "/path/to/CODEOWNERS",
 		PullRequestID:  123,
 	}
-	project := &Project{
+	project := &client.Project{
 		ID:            1,
 		DefaultBranch: "main",
 	}
@@ -579,14 +583,14 @@ func TestRun_SuccessApproved(t *testing.T) {
 	mockProcessor := new(MockCodeOwnersProcessor)
 
 	// Sample data
-	cfg := GitlabConfig{
+	cfg := config.GitlabConfig{
 		Insecure:       false,
 		BaseRepoOwner:  "owner",
 		BaseRepoName:   "repo",
 		CodeOwnersPath: "/path/to/CODEOWNERS",
 		PullRequestID:  123,
 	}
-	project := &Project{
+	project := &client.Project{
 		ID:            1,
 		DefaultBranch: "main",
 	}
@@ -599,11 +603,11 @@ func TestRun_SuccessApproved(t *testing.T) {
 	mockClient.On("GetFileContent", project.ID, project.DefaultBranch, cfg.CodeOwnersPath).Return(codeOwnersContent, nil)
 
 	// Setup expectations for CheckMandatoryApproval
-	owners := []CodeOwner{
+	owners := []processor.CodeOwner{
 		{Owner: "owner1"},
 	}
-	reactions := []*AwardEmoji{
-		{User: User{Username: "user1"}},
+	reactions := []*client.AwardEmoji{
+		{User: client.User{Username: "user1"}},
 	}
 
 	mockProcessor.On("ParseCodeOwners", mock.Anything).Return(owners, nil)
@@ -628,14 +632,14 @@ func TestRun_SuccessNotApproved(t *testing.T) {
 	mockProcessor := new(MockCodeOwnersProcessor)
 
 	// Sample data
-	cfg := GitlabConfig{
+	cfg := config.GitlabConfig{
 		Insecure:       false,
 		BaseRepoOwner:  "owner",
 		BaseRepoName:   "repo",
 		CodeOwnersPath: "/path/to/CODEOWNERS",
 		PullRequestID:  123,
 	}
-	project := &Project{
+	project := &client.Project{
 		ID:            1,
 		DefaultBranch: "main",
 	}
@@ -648,11 +652,11 @@ func TestRun_SuccessNotApproved(t *testing.T) {
 	mockClient.On("GetFileContent", project.ID, project.DefaultBranch, cfg.CodeOwnersPath).Return(codeOwnersContent, nil)
 
 	// Setup expectations for CheckMandatoryApproval
-	owners := []CodeOwner{
+	owners := []processor.CodeOwner{
 		{Owner: "owner1"},
 	}
-	reactions := []*AwardEmoji{
-		{User: User{Username: "user1"}},
+	reactions := []*client.AwardEmoji{
+		{User: client.User{Username: "user1"}},
 	}
 
 	mockProcessor.On("ParseCodeOwners", mock.Anything).Return(owners, nil)
@@ -677,7 +681,7 @@ func TestRun_ErrorProcessingMR(t *testing.T) {
 	mockProcessor := new(MockCodeOwnersProcessor)
 
 	// Sample data
-	cfg := GitlabConfig{
+	cfg := config.GitlabConfig{
 		Insecure:       false,
 		BaseRepoOwner:  "owner",
 		BaseRepoName:   "repo",
@@ -737,9 +741,9 @@ func TestRun_InsecureMode(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			mockClient := new(MockGitlabClient)
-			processor := &CodeOwnersProcessor{}
+			processor := &processor.CodeOwnersProcessor{}
 
-			cfg := GitlabConfig{
+			cfg := config.GitlabConfig{
 				Insecure:       test.insecure,
 				MrAuthor:       "author1",
 				ApproveEmoji:   ":+1:",
@@ -751,15 +755,15 @@ func TestRun_InsecureMode(t *testing.T) {
 			}
 
 			// Setup expectations for GetProject
-			mockClient.On("GetProject", fmt.Sprintf("%s/%s", cfg.BaseRepoOwner, cfg.BaseRepoName)).Return(&Project{ID: 1, DefaultBranch: "main"}, nil)
+			mockClient.On("GetProject", fmt.Sprintf("%s/%s", cfg.BaseRepoOwner, cfg.BaseRepoName)).Return(&client.Project{ID: 1, DefaultBranch: "main"}, nil)
 
 			// Setup expectations for GetFileContent
 			codeOwnersContent := "/path/to/terraform @author1"
 			mockClient.On("GetFileContent", 1, "main", cfg.CodeOwnersPath).Return(codeOwnersContent, nil)
 
 			// Setup expectations for ListAwardEmojis
-			reactions := []*AwardEmoji{
-				{Name: ":+1:", User: User{Username: "author1"}},
+			reactions := []*client.AwardEmoji{
+				{Name: ":+1:", User: client.User{Username: "author1"}},
 			}
 			mockClient.On("ListAwardEmojis", 1, cfg.PullRequestID).Return(reactions, nil)
 

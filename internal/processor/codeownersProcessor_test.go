@@ -1,9 +1,12 @@
-package main
+package processor
 
 import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/shini4i/atlantis-emoji-gate/internal/client"
+	"github.com/shini4i/atlantis-emoji-gate/internal/config"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -16,7 +19,7 @@ func (f FaultyReader) Read(p []byte) (n int, err error) {
 }
 
 func TestCanApprove(t *testing.T) {
-	cfg := GitlabConfig{
+	cfg := config.GitlabConfig{
 		ApproveEmoji:  "thumbsup",
 		MrAuthor:      "author",
 		Insecure:      false,
@@ -28,7 +31,7 @@ func TestCanApprove(t *testing.T) {
 	testCases := []struct {
 		name        string
 		owner       CodeOwner
-		reaction    *AwardEmoji
+		reaction    *client.AwardEmoji
 		tfPath      string
 		wantApprove bool
 	}{
@@ -38,7 +41,7 @@ func TestCanApprove(t *testing.T) {
 				Owner: "user2",
 				Path:  "*",
 			},
-			reaction: &AwardEmoji{
+			reaction: &client.AwardEmoji{
 				Name: "thumbsup",
 				User: struct {
 					Username string `json:"username"`
@@ -52,7 +55,7 @@ func TestCanApprove(t *testing.T) {
 				Owner: "user1",
 				Path:  "*",
 			},
-			reaction: &AwardEmoji{
+			reaction: &client.AwardEmoji{
 				Name: "thumbsdown",
 				User: struct {
 					Username string `json:"username"`
@@ -66,7 +69,7 @@ func TestCanApprove(t *testing.T) {
 				Owner: "author",
 				Path:  "*",
 			},
-			reaction: &AwardEmoji{
+			reaction: &client.AwardEmoji{
 				Name: "thumbsup",
 				User: struct {
 					Username string `json:"username"`
@@ -80,7 +83,7 @@ func TestCanApprove(t *testing.T) {
 				Owner: "user1",
 				Path:  "non-matching-path",
 			},
-			reaction: &AwardEmoji{
+			reaction: &client.AwardEmoji{
 				Name: "thumbsup",
 				User: struct {
 					Username string `json:"username"`
@@ -96,7 +99,7 @@ func TestCanApprove(t *testing.T) {
 				Owner: "user1",
 				Path:  "*",
 			},
-			reaction: &AwardEmoji{
+			reaction: &client.AwardEmoji{
 				Name: "thumbsup",
 				User: struct {
 					Username string `json:"username"`
@@ -110,7 +113,7 @@ func TestCanApprove(t *testing.T) {
 				Owner: "user3",
 				Path:  "matching-path",
 			},
-			reaction: &AwardEmoji{
+			reaction: &client.AwardEmoji{
 				Name: "thumbsup",
 				User: struct {
 					Username string `json:"username"`
@@ -124,7 +127,7 @@ func TestCanApprove(t *testing.T) {
 				Owner: "user4",
 				Path:  "non-matching-path",
 			},
-			reaction: &AwardEmoji{
+			reaction: &client.AwardEmoji{
 				Name: "thumbsup",
 				User: struct {
 					Username string `json:"username"`
