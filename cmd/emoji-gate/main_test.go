@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -696,4 +697,104 @@ func TestRun_ErrorProcessingMR(t *testing.T) {
 	// Ensure that all expectations were met
 	mockClient.AssertExpectations(t)
 	mockProcessor.AssertExpectations(t)
+}
+
+func TestRun_InsecureMode(t *testing.T) {
+	tests := []struct {
+		name              string
+		insecure          bool
+		expectContains    []string
+		expectNotContains []string
+		expectedExit      int
+	}{
+		{
+			name:     "Insecure mode enabled",
+			insecure: true,
+			expectContains: []string{
+				"Insecure mode enabled: MR author can approve their own MR if they are in CODEOWNERS",
+				"Mandatory approval provided",
+			},
+			expectNotContains: []string{
+				"MR author 'author1' cannot approve their own MR",
+			},
+			expectedExit: 0,
+		},
+		{
+			name:     "Insecure mode disabled",
+			insecure: false,
+			expectContains: []string{
+				"MR author 'author1' cannot approve their own MR",
+				"Mandatory approval not found",
+			},
+			expectNotContains: []string{
+				"Insecure mode enabled: MR author can approve their own MR if they are in CODEOWNERS",
+				"Mandatory approval provided",
+			},
+			expectedExit: 1,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			mockClient := new(MockGitlabClient)
+			processor := &CodeOwnersProcessor{}
+
+			cfg := GitlabConfig{
+				Insecure:       test.insecure,
+				MrAuthor:       "author1",
+				ApproveEmoji:   ":+1:",
+				TerraformPath:  "/path/to/terraform/module",
+				BaseRepoOwner:  "owner",
+				BaseRepoName:   "repo",
+				PullRequestID:  123,
+				CodeOwnersPath: "/path/to/CODEOWNERS",
+			}
+
+			// Setup expectations for GetProject
+			mockClient.On("GetProject", fmt.Sprintf("%s/%s", cfg.BaseRepoOwner, cfg.BaseRepoName)).Return(&Project{ID: 1, DefaultBranch: "main"}, nil)
+
+			// Setup expectations for GetFileContent
+			codeOwnersContent := "/path/to/terraform @author1"
+			mockClient.On("GetFileContent", 1, "main", cfg.CodeOwnersPath).Return(codeOwnersContent, nil)
+
+			// Setup expectations for ListAwardEmojis
+			reactions := []*AwardEmoji{
+				{Name: ":+1:", User: User{Username: "author1"}},
+			}
+			mockClient.On("ListAwardEmojis", 1, cfg.PullRequestID).Return(reactions, nil)
+
+			// Capture the output from fmt.Println and fmt.Printf
+			// Save original stdout
+			origStdout := os.Stdout
+
+			// Create a pipe to capture output
+			r, w, _ := os.Pipe()
+			os.Stdout = w
+
+			// Call Run
+			exitCode := Run(mockClient, cfg, processor)
+
+			// Close the writer and restore stdout
+			w.Close()
+			os.Stdout = origStdout
+
+			// Read the captured output
+			outputBytes, _ := io.ReadAll(r)
+			output := string(outputBytes)
+
+			// Validate exit code
+			assert.Equal(t, test.expectedExit, exitCode)
+
+			// Validate printed messages
+			for _, msg := range test.expectContains {
+				assert.Contains(t, output, msg)
+			}
+			for _, msg := range test.expectNotContains {
+				assert.NotContains(t, output, msg)
+			}
+
+			// Ensure that all expectations were met
+			mockClient.AssertExpectations(t)
+		})
+	}
 }
