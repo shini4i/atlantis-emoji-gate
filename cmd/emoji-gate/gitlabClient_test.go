@@ -214,7 +214,7 @@ func TestGitlabClient_Get_ErrorCases(t *testing.T) {
 				// Simulate a successful response with a faulty body reader
 				return &http.Response{
 					StatusCode: http.StatusOK,
-					Body:       &FaultyReadCloser{},
+					Body:       &FaultyReadCloser{FailRead: true},
 				}, nil
 			},
 		}
@@ -228,7 +228,7 @@ func TestGitlabClient_Get_ErrorCases(t *testing.T) {
 
 		// Assertions
 		assert.Error(t, err, "Expected an error when reading the response body fails")
-		assert.Contains(t, err.Error(), "failed to read response body", "Expected error to mention failed body read")
+		assert.Contains(t, err.Error(), "mocked read error", "Expected error to mention failed body read")
 	})
 
 	// Test case 6: Failed to read response body in non-200 status code
