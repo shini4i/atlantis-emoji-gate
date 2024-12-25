@@ -4,8 +4,10 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -19,13 +21,24 @@ func (m *MockRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 	return m.RoundTripFunc(req) // Calls the mock function
 }
 
-type FaultyReadCloser struct{}
+type FaultyReadCloser struct {
+	FailRead  bool
+	FailClose bool
+}
 
 func (f *FaultyReadCloser) Read(p []byte) (n int, err error) {
-	return 0, fmt.Errorf("mocked read error")
+	if f.FailRead {
+		return 0, fmt.Errorf("mocked read error")
+	}
+	content := `{"key": "value"}`
+	copy(p, content)
+	return len(content), io.EOF
 }
 
 func (f *FaultyReadCloser) Close() error {
+	if f.FailClose {
+		return fmt.Errorf("mocked close error")
+	}
 	return nil
 }
 
@@ -216,5 +229,154 @@ func TestGitlabClient_Get_ErrorCases(t *testing.T) {
 		// Assertions
 		assert.Error(t, err, "Expected an error when reading the response body fails")
 		assert.Contains(t, err.Error(), "failed to read response body", "Expected error to mention failed body read")
+	})
+
+	// Test case 6: Failed to read response body in non-200 status code
+	t.Run("Failed to read response body in non-200 status code", func(t *testing.T) {
+		// Create a mock HTTP client with a custom RoundTripper
+		mockTransport := &MockRoundTripper{
+			RoundTripFunc: func(req *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusInternalServerError, // Simulate non-200 status code
+					Body: &FaultyReadCloser{
+						FailRead: true, // Simulate a read error
+					},
+					Header: make(http.Header),
+				}, nil
+			},
+		}
+
+		// Initialize GitLab client
+		client := NewGitlabClient("valid-url", "dummyToken")
+		client.Scheme = "http"
+		client.client = &http.Client{Transport: mockTransport}
+
+		// Execute the `get()` function
+		var target interface{}
+		err := client.get("test-path", &target)
+
+		// Assertions
+		assert.Error(t, err, "Expected an error when failing to read the response body")
+		assert.Contains(t, err.Error(), "mocked read error", "Expected the error message to indicate the read failure")
+	})
+}
+
+func TestGitlabClient_GetFileContent_ErrorCases(t *testing.T) {
+	t.Run("File not found (404 error)", func(t *testing.T) {
+		// Mock HTTP client to simulate 404 response
+		mockTransport := &MockRoundTripper{
+			RoundTripFunc: func(req *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusNotFound, // Simulate 404 Not Found
+					Body:       io.NopCloser(strings.NewReader("file not found")),
+					Header:     make(http.Header),
+				}, nil
+			},
+		}
+
+		client := NewGitlabClient("valid-url", "dummyToken")
+		client.Scheme = "http"
+		client.client = &http.Client{Transport: mockTransport}
+
+		// Call GetFileContent with all required arguments
+		content, err := client.GetFileContent(123, "main", "nonexistent-file-path")
+
+		// Assertions
+		assert.Error(t, err, "Expected an error for 404 response")
+		assert.Contains(t, err.Error(), "404", "Expected error message to include 404 status")
+		assert.Empty(t, content, "Expected content to be empty on failure")
+	})
+
+	t.Run("Authentication error (401/403)", func(t *testing.T) {
+		mockTransport := &MockRoundTripper{
+			RoundTripFunc: func(req *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusForbidden, // Simulate 403 Forbidden
+					Body:       io.NopCloser(strings.NewReader("access denied")),
+					Header:     make(http.Header),
+				}, nil
+			},
+		}
+
+		client := NewGitlabClient("valid-url", "dummyToken")
+		client.Scheme = "http"
+		client.client = &http.Client{Transport: mockTransport}
+
+		// Call GetFileContent with all required arguments
+		content, err := client.GetFileContent(123, "main", "restricted-file-path")
+
+		// Assertions
+		assert.Error(t, err, "Expected an error for 403 response")
+		assert.Contains(t, err.Error(), "403", "Expected error message to include 403 status")
+		assert.Empty(t, content, "Expected content to be empty on failure")
+	})
+
+	t.Run("Network error", func(t *testing.T) {
+		mockTransport := &MockRoundTripper{
+			RoundTripFunc: func(req *http.Request) (*http.Response, error) {
+				return nil, fmt.Errorf("mocked network error") // Simulate network failure
+			},
+		}
+
+		client := NewGitlabClient("valid-url", "dummyToken")
+		client.Scheme = "http"
+		client.client = &http.Client{Transport: mockTransport}
+
+		// Call GetFileContent with all required arguments
+		content, err := client.GetFileContent(123, "main", "any-file-path")
+
+		// Assertions
+		assert.Error(t, err, "Expected an error for network failure")
+		assert.Contains(t, err.Error(), "mocked network error", "Expected error message to include network failure")
+		assert.Empty(t, content, "Expected content to be empty on failure")
+	})
+
+	t.Run("Malformed response content", func(t *testing.T) {
+		mockTransport := &MockRoundTripper{
+			RoundTripFunc: func(req *http.Request) (*http.Response, error) {
+				// Simulate a valid status but invalid response content
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader("not valid json")), // Invalid body
+					Header:     make(http.Header),
+				}, nil
+			},
+		}
+
+		client := NewGitlabClient("valid-url", "dummyToken")
+		client.Scheme = "http"
+		client.client = &http.Client{Transport: mockTransport}
+
+		// Call GetFileContent with all required arguments
+		content, err := client.GetFileContent(123, "main", "malformed-content-path")
+
+		// Assertions
+		assert.Error(t, err, "Expected an error for malformed content")
+		assert.Contains(t, err.Error(), "failed to unmarshal", "Expected error message to mention unmarshaling failure")
+		assert.Empty(t, content, "Expected content to be empty on failure")
+	})
+
+	t.Run("Unexpected status code", func(t *testing.T) {
+		mockTransport := &MockRoundTripper{
+			RoundTripFunc: func(req *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusTeapot, // Simulate unexpected 418 status
+					Body:       io.NopCloser(strings.NewReader("I'm a teapot")),
+					Header:     make(http.Header),
+				}, nil
+			},
+		}
+
+		client := NewGitlabClient("valid-url", "dummyToken")
+		client.Scheme = "http"
+		client.client = &http.Client{Transport: mockTransport}
+
+		// Call GetFileContent with all required arguments
+		content, err := client.GetFileContent(123, "main", "weird-status-code-path")
+
+		// Assertions
+		assert.Error(t, err, "Expected an error for unexpected status code")
+		assert.Contains(t, err.Error(), "418", "Expected error message to include unexpected status code 418")
+		assert.Empty(t, content, "Expected content to be empty on failure")
 	})
 }
