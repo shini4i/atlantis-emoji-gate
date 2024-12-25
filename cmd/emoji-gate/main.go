@@ -15,7 +15,7 @@ func fetchCodeOwnersContent(client GitlabClientInterface, cfg GitlabConfig, proj
 		if err != nil {
 			return "", fmt.Errorf("failed to get codeowners project: %w", err)
 		}
-		return client.GetFileContent(codeOwnersRepo.ID, project.DefaultBranch, cfg.CodeOwnersPath)
+		return client.GetFileContent(codeOwnersRepo.ID, codeOwnersRepo.DefaultBranch, cfg.CodeOwnersPath)
 	}
 	return client.GetFileContent(project.ID, project.DefaultBranch, cfg.CodeOwnersPath)
 }
