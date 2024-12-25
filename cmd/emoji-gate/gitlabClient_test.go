@@ -1,12 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -297,4 +299,56 @@ func TestGitlabClient_GetFileContent_Base64DecodeFailure(t *testing.T) {
 	_, err := client.GetFileContent(123, "main", "file.txt")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to decode base64")
+}
+
+func TestGitlabClient_Get_BodyCloseErrorLogging(t *testing.T) {
+	// Create a mock HTTP client with a faulty response body
+	mockTransport := &MockRoundTripper{
+		RoundTripFunc: func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body: &FaultyReadCloser{
+					FailRead:  false, // No issue while reading
+					FailClose: true,  // Fails on Close
+				},
+				Header: make(http.Header),
+			}, nil
+		},
+	}
+
+	// Capture os.Stdout output by redirecting it temporarily
+	r, w, _ := os.Pipe()
+	stdout := os.Stdout
+	os.Stdout = w
+
+	var outputCaptured string
+	done := make(chan bool)
+	go func() {
+		var buf bytes.Buffer
+		_, err := io.Copy(&buf, r)
+		if err != nil {
+			t.Error("failed to read from pipe:", err)
+		}
+		outputCaptured = buf.String()
+		done <- true
+	}()
+
+	// Initialize the GitLab client using the mock transport
+	client := NewGitlabClient("valid-url", "dummyToken")
+	client.Scheme = "http"
+	client.client = &http.Client{Transport: mockTransport}
+
+	var target map[string]interface{}
+	err := client.get("test-path", &target)
+
+	_ = w.Close()
+	os.Stdout = stdout
+	<-done
+
+	// Assertions to validate behavior
+	assert.NoError(t, err, "The main operation should succeed despite the close error")
+
+	// Validate the captured log output
+	assert.Contains(t, outputCaptured, "failed to close response body:", "Log should contain the message about closing failure")
+	assert.Contains(t, outputCaptured, "mocked close error", "Log should include the specific close error")
 }
