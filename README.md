@@ -22,18 +22,39 @@ specific person has reviewed the MR before `atlantis apply` is allowed to run.
 
 ```mermaid
 graph LR
-    A[MR is Opened] --> B[Atlantis plan is triggered]
-    B --> C[Atlantis adds comment to MR with details]
-    C --> D[User validates the result]
-    D --> E[User adds comment: atlantis apply]
-    E --> F[Atlantis runs atlantis-emoji-gate]
-    F --> G{Code owner added required emoji?}
-    G -->|Yes| H[Apply happens]
-    G -->|No| I[Apply is aborted]
 
-%% Style links
+    subgraph "Open & Plan"
+        A[MR is Opened] --> B[Atlantis plan is triggered]
+        B --> C[Atlantis adds comment to MR with details]
+    end
+
+    subgraph "Validation"
+        C --> D[User validates the result]
+        D --> E[User adds comment: atlantis apply]
+    end
+
+    subgraph "Apply"
+        E --> F[Atlantis runs atlantis-emoji-gate]
+        F --> G{Code owner added required emoji?}
+        G -->|Yes| H[Apply happens]
+        G -->|No| I[Apply is aborted]
+    end
+
+%% Style the nodes
+    style A fill:#EEF3FF,stroke:#8892FF,stroke-width:1px,color:#000
+    style B fill:#EEF3FF,stroke:#8892FF,stroke-width:1px,color:#000
+    style C fill:#EEF3FF,stroke:#8892FF,stroke-width:1px,color:#000
+    style D fill:#FFFFEE,stroke:#D4C200,stroke-width:1px,color:#000
+    style E fill:#FFFFEE,stroke:#D4C200,stroke-width:1px,color:#000
+    style F fill:#EEFFFF,stroke:#00C2D4,stroke-width:1px,color:#000
+    style G fill:#FFFFEE,stroke:#D4C200,stroke-width:2px,color:#000
+    style H fill:#DDFFDD,stroke:#09A009,stroke-width:2px,color:#000
+    style I fill:#FFDADA,stroke:#CC0000,stroke-width:2px,color:#000
+
+%% Style specific links (6 and 7 from the original diagram)
     linkStyle 6 stroke:green,stroke-width:2px
     linkStyle 7 stroke:red,stroke-width:2px
+
 ```
 
 ## Configuration
