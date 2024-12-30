@@ -47,7 +47,7 @@ graph LR
     style D fill:#FFFFEE,stroke:#D4C200,stroke-width:1px,color:#000
     style E fill:#FFFFEE,stroke:#D4C200,stroke-width:1px,color:#000
     style F fill:#EEFFFF,stroke:#00C2D4,stroke-width:1px,color:#000
-    style G fill:#FFE5EC,stroke:#C2005B,stroke-width:2px,color:#000
+    style G fill:#FFFFEE,stroke:#D4C200,stroke-width:2px,color:#000
     style H fill:#DDFFDD,stroke:#09A009,stroke-width:2px,color:#000
     style I fill:#FFDADA,stroke:#CC0000,stroke-width:2px,color:#000
 
