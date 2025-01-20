@@ -9,16 +9,20 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/shini4i/atlantis-emoji-gate)](https://goreportcard.com/report/github.com/shini4i/atlantis-emoji-gate)
 ![GitHub](https://img.shields.io/github/license/shini4i/atlantis-emoji-gate)
 
+A tool that implements mandatory approvals for Atlantis workflows in GitLab Community Edition (CE) using emoji reactions as an approval mechanism.
 
 </div>
 
-## General information
+## The Problem
+GitLab CE doesn't support mandatory merge request approvals, which limits Atlantis workflow capabilities. While this feature is available in Premium/Ultimate editions, CE users need an alternative solution.
 
-`atlantis-emoji-gate` is a tool designed to work with Atlantis on GitLab Community Edition (CE) to ensure that a
-specific emoji reaction is present on a GitLab merge request.
+## The Solution
+This tool integrates with Atlantis and GitLab CE to:
+- Use emoji reactions as a lightweight approval mechanism
+- Enforce mandatory reviews (from codeowners) before Terraform changes can be applied
+- Maintain security controls without requiring Premium features
 
-This acts as a replacement for mandatory MR approval (which does not work on CE), and can be used to ensure that a
-specific person has reviewed the MR before `atlantis apply` is allowed to run.
+## How it works
 
 ```mermaid
 graph LR
@@ -55,6 +59,14 @@ graph LR
     linkStyle 6 stroke:green,stroke-width:2px
     linkStyle 7 stroke:red,stroke-width:2px
 
+```
+
+## Where to get?
+
+Pre-built Docker images are available - you don't need to build your own custom Atlantis image. You can use the  image from this [GitHub Container Registry](https://github.com/shini4i/docker-atlantis/pkgs/container/atlantis).
+
+```
+docker pull ghcr.io/shini4i/atlantis:v0.32.0
 ```
 
 ## Configuration
