@@ -15,7 +15,8 @@ type GitlabConfig struct {
 	CodeOwnersPath string `env:"CODEOWNERS_PATH,notEmpty" envDefault:"CODEOWNERS"`
 	CodeOwnersRepo string `env:"CODEOWNERS_REPO"` // Optional, if not provided, will use BaseRepoOwner/BaseRepoName
 	MrAuthor       string `env:"PULL_AUTHOR,required,notEmpty"`
-	Insecure       bool   `env:"INSECURE,notEmpty" envDefault:"false"` // If MR author allowed to approve his own MR
+	Insecure       bool   `env:"INSECURE,notEmpty" envDefault:"false"`   // If MR author allowed to approve his own MR
+	Restricted     bool   `env:"RESTRICTED,notEmpty" envDefault:"false"` // A feature toggle that will enforce emoji timestamp validation
 }
 
 // NewGitlabConfig parses environment variables into GitlabConfig.

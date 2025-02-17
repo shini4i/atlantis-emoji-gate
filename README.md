@@ -79,6 +79,7 @@ docker pull ghcr.io/shini4i/atlantis:v0.32.0
 | `CODEOWNERS_PATH` | The path to the CODEOWNERS file in the repository                                  | `CODEOWNERS` | No       |
 | `CODEOWNERS_REPO` | The repository to check for CODEOWNERS file                                        |              | Yes      |
 | `INSECURE`        | If MR author is allowed to approve their own MR                                    | `false`      | No       |
+| `RESTRICTED`      | A feature toggle that will enforce emoji timestamp validation                      | `false`      | No       |
 
 The remaining environment variables are set dynamically by Atlantis and should not be set manually.
 

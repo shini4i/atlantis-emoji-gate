@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/shini4i/atlantis-emoji-gate/internal/client"
 	"github.com/shini4i/atlantis-emoji-gate/internal/config"
@@ -64,6 +65,18 @@ func (m *MockGitlabClient) ListAwardEmojis(projectID int, pullRequestID int) ([]
 		emojis = tmp.([]*client.AwardEmoji)
 	}
 	return emojis, args.Error(1)
+}
+
+func (m *MockGitlabClient) GetLatestCommitTimestamp(projectID int, mrID int) (time.Time, error) {
+	args := m.Called(projectID, mrID)
+	// Return the mocked time value
+	return args.Get(0).(time.Time), args.Error(1)
+}
+
+func (m *MockGitlabClient) GetMrCommits(projectID int, mrID int) ([]*client.Commit, error) {
+	args := m.Called(projectID, mrID)
+	commits := args.Get(0).([]*client.Commit)
+	return commits, args.Error(1)
 }
 
 // -------------------- Test Cases --------------------

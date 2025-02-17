@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"time"
 )
 
 // GitlabClientInterface defines the methods that must be implemented by a GitLab client.
@@ -14,6 +15,8 @@ type GitlabClientInterface interface {
 	GetProject(projectPath string) (*Project, error)
 	ListAwardEmojis(projectID, mrID int) ([]*AwardEmoji, error)
 	GetFileContent(projectID int, branch, filePath string) (string, error)
+	GetLatestCommitTimestamp(projectID, mrID int) (time.Time, error)
+	GetMrCommits(projectID, mrID int) ([]*Commit, error)
 }
 
 type GitlabClient struct {
@@ -29,12 +32,18 @@ type Project struct {
 }
 
 type AwardEmoji struct {
-	Name string `json:"name"`
-	User User   `json:"user"`
+	Name      string    `json:"name"`
+	User      User      `json:"user"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type User struct {
 	Username string `json:"username"`
+}
+
+type Commit struct {
+	ID        string    `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // NewGitlabClient creates a new GitlabClient with the given base URL and token.
@@ -114,4 +123,23 @@ func (g *GitlabClient) GetFileContent(projectID int, branch, filePath string) (s
 		return "", fmt.Errorf("failed to decode base64 file content: %w", err)
 	}
 	return string(decodedContent), nil
+}
+
+// GetMrCommits retrieves the commits for the specified project and merge request.
+func (g *GitlabClient) GetMrCommits(projectID, mrID int) ([]*Commit, error) {
+	var commits []*Commit
+	err := g.get(fmt.Sprintf("/projects/%d/merge_requests/%d/commits", projectID, mrID), &commits)
+	return commits, err
+}
+
+// GetLatestCommitTimestamp retrieves the timestamp of the latest commit for the specified project and merge request.
+func (g *GitlabClient) GetLatestCommitTimestamp(projectID, mrID int) (time.Time, error) {
+	commits, err := g.GetMrCommits(projectID, mrID)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if len(commits) == 0 {
+		return time.Time{}, fmt.Errorf("no commits found for MR %d", mrID)
+	}
+	return commits[0].CreatedAt, nil
 }
