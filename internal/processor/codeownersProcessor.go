@@ -10,6 +10,7 @@ import (
 	"github.com/shini4i/atlantis-emoji-gate/internal/config"
 )
 
+// CodeOwnersProcessorInterface defines methods for processing CODEOWNERS files
 type CodeOwnersProcessorInterface interface {
 	ParseCodeOwners(reader io.Reader) ([]CodeOwner, error)
 	CanApprove(owner CodeOwner, reaction *client.AwardEmoji, cfg config.GitlabConfig) bool
