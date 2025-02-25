@@ -867,3 +867,35 @@ func TestCheckMandatoryApproval_WithValidAndExpiredApprovals(t *testing.T) {
 	mockProcessor.AssertExpectations(t)
 	mockClient.AssertExpectations(t)
 }
+
+// TestCheckMandatoryApproval_GetLatestCommitTimestampError tests CheckMandatoryApproval when GetLatestCommitTimestamp returns an error.
+func TestCheckMandatoryApproval_GetLatestCommitTimestampError(t *testing.T) {
+	// Initialize mocks
+	mockClient := new(MockGitlabClient)
+	mockProcessor := new(MockCodeOwnersProcessor)
+
+	// Sample data
+	projectID := 1
+	cfg := config.GitlabConfig{
+		PullRequestID: 123,
+		Restricted:    true,
+	}
+	codeOwnersContent := "sample content"
+
+	// Setup expectations
+	mockProcessor.On("ParseCodeOwners", mock.Anything).Return([]processor.CodeOwner{{Owner: "owner1"}}, nil)
+	mockClient.On("ListAwardEmojis", projectID, cfg.PullRequestID).Return([]*client.AwardEmoji{}, nil)
+	mockClient.On("GetLatestCommitTimestamp", projectID, cfg.PullRequestID).Return(time.Time{}, fmt.Errorf("API error"))
+
+	// Call the function
+	approved, err := CheckMandatoryApproval(mockClient, cfg, projectID, codeOwnersContent, mockProcessor)
+
+	// Assertions
+	assert.Error(t, err)
+	assert.False(t, approved)
+	assert.Contains(t, err.Error(), "failed to fetch latest commit timestamp")
+
+	// Ensure that all expectations were met
+	mockProcessor.AssertExpectations(t)
+	mockClient.AssertExpectations(t)
+}
