@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/shini4i/atlantis-emoji-gate/internal/client"
 	"github.com/shini4i/atlantis-emoji-gate/internal/config"
@@ -64,6 +65,18 @@ func (m *MockGitlabClient) ListAwardEmojis(projectID int, pullRequestID int) ([]
 		emojis = tmp.([]*client.AwardEmoji)
 	}
 	return emojis, args.Error(1)
+}
+
+func (m *MockGitlabClient) GetLatestCommitTimestamp(projectID int, mrID int) (time.Time, error) {
+	args := m.Called(projectID, mrID)
+	// Return the mocked time value
+	return args.Get(0).(time.Time), args.Error(1)
+}
+
+func (m *MockGitlabClient) GetMrCommits(projectID int, mrID int) ([]*client.Commit, error) {
+	args := m.Called(projectID, mrID)
+	commits := args.Get(0).([]*client.Commit)
+	return commits, args.Error(1)
 }
 
 // -------------------- Test Cases --------------------
@@ -347,6 +360,8 @@ func TestFilterApprovals_WithValidApprovals(t *testing.T) {
 	// Initialize mocks
 	mockProcessor := new(MockCodeOwnersProcessor)
 
+	date := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+
 	// Sample data
 	owners := []processor.CodeOwner{
 		{Owner: "owner1"},
@@ -367,7 +382,7 @@ func TestFilterApprovals_WithValidApprovals(t *testing.T) {
 	mockProcessor.On("CanApprove", owners[1], reactions[1], cfg).Return(true)
 
 	// Call the function
-	approvedBy := filterApprovals(owners, reactions, cfg, mockProcessor)
+	approvedBy := filterApprovals(owners, reactions, cfg, date, mockProcessor)
 
 	// Assertions
 	expected := []string{"user1", "user2"}
@@ -381,6 +396,8 @@ func TestFilterApprovals_WithValidApprovals(t *testing.T) {
 func TestFilterApprovals_NoValidApprovals(t *testing.T) {
 	// Initialize mocks
 	mockProcessor := new(MockCodeOwnersProcessor)
+
+	date := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
 
 	// Sample data
 	owners := []processor.CodeOwner{
@@ -397,7 +414,7 @@ func TestFilterApprovals_NoValidApprovals(t *testing.T) {
 	mockProcessor.On("CanApprove", owners[0], reactions[0], cfg).Return(false)
 
 	// Call the function
-	approvedBy := filterApprovals(owners, reactions, cfg, mockProcessor)
+	approvedBy := filterApprovals(owners, reactions, cfg, date, mockProcessor)
 
 	// Assertions
 	var expected []string
@@ -801,4 +818,128 @@ func TestRun_InsecureMode(t *testing.T) {
 			mockClient.AssertExpectations(t)
 		})
 	}
+}
+
+// TestCheckMandatoryApproval_WithValidAndExpiredApprovals tests CheckMandatoryApproval with both valid and expired approvals.
+// TestCheckMandatoryApproval_WithValidAndExpiredApprovals tests CheckMandatoryApproval with both valid and expired approvals.
+func TestCheckMandatoryApproval_WithValidAndExpiredApprovals(t *testing.T) {
+	// Initialize mocks
+	mockClient := new(MockGitlabClient)
+	mockProcessor := new(MockCodeOwnersProcessor)
+
+	// Sample data
+	projectID := 1
+	cfg := config.GitlabConfig{
+		PullRequestID: 123,
+		Restricted:    true,
+	}
+	codeOwnersContent := "sample content"
+
+	owners := []processor.CodeOwner{
+		{Owner: "owner1"},
+	}
+
+	// Define timestamps
+	latestCommitTimestamp := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+	validReactionTimestamp := latestCommitTimestamp.Add(1 * time.Hour)
+	expiredReactionTimestamp := latestCommitTimestamp.Add(-1 * time.Hour)
+
+	reactions := []*client.AwardEmoji{
+		{User: client.User{Username: "owner1"}, UpdatedAt: validReactionTimestamp},
+		{User: client.User{Username: "owner2"}, UpdatedAt: expiredReactionTimestamp},
+	}
+
+	// Setup expectations
+	mockProcessor.On("ParseCodeOwners", mock.Anything).Return(owners, nil)
+	mockClient.On("ListAwardEmojis", projectID, cfg.PullRequestID).Return(reactions, nil)
+	mockClient.On("GetLatestCommitTimestamp", projectID, cfg.PullRequestID).Return(latestCommitTimestamp, nil)
+	mockProcessor.On("CanApprove", owners[0], reactions[0], cfg).Return(true)
+	mockProcessor.On("CanApprove", owners[0], reactions[1], cfg).Return(false)
+
+	// Call the function
+	approved, err := CheckMandatoryApproval(mockClient, cfg, projectID, codeOwnersContent, mockProcessor)
+
+	// Assertions
+	assert.NoError(t, err)
+	assert.True(t, approved)
+
+	// Ensure that all expectations were met
+	mockProcessor.AssertExpectations(t)
+	mockClient.AssertExpectations(t)
+}
+
+// TestCheckMandatoryApproval_GetLatestCommitTimestampError tests CheckMandatoryApproval when GetLatestCommitTimestamp returns an error.
+func TestCheckMandatoryApproval_GetLatestCommitTimestampError(t *testing.T) {
+	// Initialize mocks
+	mockClient := new(MockGitlabClient)
+	mockProcessor := new(MockCodeOwnersProcessor)
+
+	// Sample data
+	projectID := 1
+	cfg := config.GitlabConfig{
+		PullRequestID: 123,
+		Restricted:    true,
+	}
+	codeOwnersContent := "sample content"
+
+	// Setup expectations
+	mockProcessor.On("ParseCodeOwners", mock.Anything).Return([]processor.CodeOwner{{Owner: "owner1"}}, nil)
+	mockClient.On("ListAwardEmojis", projectID, cfg.PullRequestID).Return([]*client.AwardEmoji{}, nil)
+	mockClient.On("GetLatestCommitTimestamp", projectID, cfg.PullRequestID).Return(time.Time{}, fmt.Errorf("API error"))
+
+	// Call the function
+	approved, err := CheckMandatoryApproval(mockClient, cfg, projectID, codeOwnersContent, mockProcessor)
+
+	// Assertions
+	assert.Error(t, err)
+	assert.False(t, approved)
+	assert.Contains(t, err.Error(), "failed to fetch latest commit timestamp")
+
+	// Ensure that all expectations were met
+	mockProcessor.AssertExpectations(t)
+	mockClient.AssertExpectations(t)
+}
+
+// TestCheckMandatoryApproval_WithRestrictedAndExpiredApproval tests CheckMandatoryApproval with Restricted flag and expired approval.
+func TestCheckMandatoryApproval_WithRestrictedAndExpiredApproval(t *testing.T) {
+	// Initialize mocks
+	mockClient := new(MockGitlabClient)
+	mockProcessor := new(MockCodeOwnersProcessor)
+
+	// Sample data
+	projectID := 1
+	cfg := config.GitlabConfig{
+		PullRequestID: 123,
+		Restricted:    true,
+	}
+	codeOwnersContent := "sample content"
+
+	owners := []processor.CodeOwner{
+		{Owner: "owner1"},
+	}
+
+	// Define timestamps
+	latestCommitTimestamp := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+	expiredReactionTimestamp := latestCommitTimestamp.Add(-1 * time.Hour)
+
+	reactions := []*client.AwardEmoji{
+		{User: client.User{Username: "owner1"}, UpdatedAt: expiredReactionTimestamp},
+	}
+
+	// Setup expectations
+	mockProcessor.On("ParseCodeOwners", mock.Anything).Return(owners, nil)
+	mockClient.On("ListAwardEmojis", projectID, cfg.PullRequestID).Return(reactions, nil)
+	mockClient.On("GetLatestCommitTimestamp", projectID, cfg.PullRequestID).Return(latestCommitTimestamp, nil)
+	mockProcessor.On("CanApprove", owners[0], reactions[0], cfg).Return(true)
+
+	// Call the function
+	approved, err := CheckMandatoryApproval(mockClient, cfg, projectID, codeOwnersContent, mockProcessor)
+
+	// Assertions
+	assert.NoError(t, err)
+	assert.False(t, approved)
+
+	// Ensure that all expectations were met
+	mockProcessor.AssertExpectations(t)
+	mockClient.AssertExpectations(t)
 }

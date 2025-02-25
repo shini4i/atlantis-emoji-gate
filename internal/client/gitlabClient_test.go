@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -100,6 +101,21 @@ func mockGitLabServer() *httptest.Server {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(response)
+	})
+
+	// Add new endpoint for merge request commits
+	mux.HandleFunc("/api/v4/projects/1/merge_requests/1/commits", func(w http.ResponseWriter, r *http.Request) {
+		commits := []*Commit{
+			{
+				ID:        "abc123",
+				CreatedAt: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC),
+			},
+			{
+				ID:        "def456",
+				CreatedAt: time.Date(2024, 1, 1, 11, 0, 0, 0, time.UTC),
+			},
+		}
+		_ = json.NewEncoder(w).Encode(commits)
 	})
 
 	return httptest.NewServer(mux)
@@ -299,6 +315,86 @@ func TestGitlabClient_GetFileContent_Base64DecodeFailure(t *testing.T) {
 	_, err := client.GetFileContent(123, "main", "file.txt")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to decode base64")
+}
+
+// Tests for GetMrCommits
+func TestGitlabClient_GetMrCommits(t *testing.T) {
+	server := mockGitLabServer()
+	defer server.Close()
+
+	client := newTestGitlabClient(server.URL)
+
+	t.Run("successful commits retrieval", func(t *testing.T) {
+		commits, err := client.GetMrCommits(1, 1)
+		assert.NoError(t, err)
+		assert.Len(t, commits, 2)
+		assert.Equal(t, "abc123", commits[0].ID)
+		assert.Equal(t,
+			time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC),
+			commits[0].CreatedAt)
+	})
+
+	t.Run("error on invalid project ID", func(t *testing.T) {
+		commits, err := client.GetMrCommits(-1, 1)
+		assert.Error(t, err)
+		assert.Nil(t, commits)
+	})
+
+	t.Run("error on non-existent merge request", func(t *testing.T) {
+		client := NewGitlabClient("valid-url", "dummyToken")
+		client.client = &http.Client{
+			Transport: newMockTransport(http.StatusNotFound, "not found", nil),
+		}
+		commits, err := client.GetMrCommits(1, 999)
+		assert.Error(t, err)
+		assert.Nil(t, commits)
+	})
+}
+
+// Tests for GetLatestCommitTimestamp
+func TestGitlabClient_GetLatestCommitTimestamp(t *testing.T) {
+	server := mockGitLabServer()
+	defer server.Close()
+
+	client := newTestGitlabClient(server.URL)
+
+	t.Run("successful timestamp retrieval", func(t *testing.T) {
+		timestamp, err := client.GetLatestCommitTimestamp(1, 1)
+		assert.NoError(t, err)
+		expectedTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+		assert.Equal(t, expectedTime, timestamp)
+	})
+
+	t.Run("error when no commits exist", func(t *testing.T) {
+		emptyClient := NewGitlabClient("valid-url", "dummyToken")
+		emptyClient.client = &http.Client{
+			Transport: newMockTransport(http.StatusOK, "[]", nil),
+		}
+		_, err := emptyClient.GetLatestCommitTimestamp(1, 1)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "no commits found")
+	})
+
+	t.Run("error propagation from GetMrCommits", func(t *testing.T) {
+		errorClient := NewGitlabClient("valid-url", "dummyToken")
+		errorClient.client = &http.Client{
+			Transport: newMockTransport(http.StatusInternalServerError,
+				"server error", nil),
+		}
+		_, err := errorClient.GetLatestCommitTimestamp(1, 1)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "500")
+	})
+
+	t.Run("malformed commit timestamp", func(t *testing.T) {
+		badTimeClient := NewGitlabClient("valid-url", "dummyToken")
+		badTimeClient.client = &http.Client{
+			Transport: newMockTransport(http.StatusOK,
+				`[{"id":"123","created_at":"invalid-time"}]`, nil),
+		}
+		_, err := badTimeClient.GetLatestCommitTimestamp(1, 1)
+		assert.Error(t, err)
+	})
 }
 
 func TestGitlabClient_Get_BodyCloseErrorLogging(t *testing.T) {

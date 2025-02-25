@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/shini4i/atlantis-emoji-gate/internal/client"
 	"github.com/shini4i/atlantis-emoji-gate/internal/config"
@@ -34,9 +35,18 @@ func CheckMandatoryApproval(client client.GitlabClientInterface, cfg config.Gitl
 		return false, fmt.Errorf("failed to fetch reactions: %w", err)
 	}
 
-	approvedBy := filterApprovals(owners, reactions, cfg, processor)
+	var lastCommitTimestamp time.Time
+
+	if cfg.Restricted {
+		lastCommitTimestamp, err = client.GetLatestCommitTimestamp(projectID, cfg.PullRequestID)
+		if err != nil {
+			return false, fmt.Errorf("failed to fetch latest commit timestamp: %w", err)
+		}
+	}
+
+	approvedBy := filterApprovals(owners, reactions, cfg, lastCommitTimestamp, processor)
 	if len(approvedBy) > 0 {
-		fmt.Printf("Mandatory approval provided by: %v\n", approvedBy)
+		fmt.Printf("--> Mandatory approval provided by: %v\n", approvedBy)
 		return true, nil
 	}
 
@@ -45,12 +55,16 @@ func CheckMandatoryApproval(client client.GitlabClientInterface, cfg config.Gitl
 }
 
 // filterApprovals identifies valid approvers from reactions.
-func filterApprovals(owners []processor.CodeOwner, reactions []*client.AwardEmoji, cfg config.GitlabConfig, processor processor.CodeOwnersProcessorInterface) []string {
+func filterApprovals(owners []processor.CodeOwner, reactions []*client.AwardEmoji, cfg config.GitlabConfig, lastCommitTimestamp time.Time, processor processor.CodeOwnersProcessorInterface) []string {
 	var approvedBy []string
 
 	for _, reaction := range reactions {
 		for _, owner := range owners {
 			if processor.CanApprove(owner, reaction, cfg) {
+				if cfg.Restricted && reaction.UpdatedAt.Before(lastCommitTimestamp) {
+					fmt.Printf("--> Skipping outdated approval by %s\n", reaction.User.Username)
+					continue
+				}
 				approvedBy = append(approvedBy, reaction.User.Username)
 			}
 		}
