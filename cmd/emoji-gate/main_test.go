@@ -899,3 +899,47 @@ func TestCheckMandatoryApproval_GetLatestCommitTimestampError(t *testing.T) {
 	mockProcessor.AssertExpectations(t)
 	mockClient.AssertExpectations(t)
 }
+
+// TestCheckMandatoryApproval_WithRestrictedAndExpiredApproval tests CheckMandatoryApproval with Restricted flag and expired approval.
+func TestCheckMandatoryApproval_WithRestrictedAndExpiredApproval(t *testing.T) {
+	// Initialize mocks
+	mockClient := new(MockGitlabClient)
+	mockProcessor := new(MockCodeOwnersProcessor)
+
+	// Sample data
+	projectID := 1
+	cfg := config.GitlabConfig{
+		PullRequestID: 123,
+		Restricted:    true,
+	}
+	codeOwnersContent := "sample content"
+
+	owners := []processor.CodeOwner{
+		{Owner: "owner1"},
+	}
+
+	// Define timestamps
+	latestCommitTimestamp := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+	expiredReactionTimestamp := latestCommitTimestamp.Add(-1 * time.Hour)
+
+	reactions := []*client.AwardEmoji{
+		{User: client.User{Username: "owner1"}, UpdatedAt: expiredReactionTimestamp},
+	}
+
+	// Setup expectations
+	mockProcessor.On("ParseCodeOwners", mock.Anything).Return(owners, nil)
+	mockClient.On("ListAwardEmojis", projectID, cfg.PullRequestID).Return(reactions, nil)
+	mockClient.On("GetLatestCommitTimestamp", projectID, cfg.PullRequestID).Return(latestCommitTimestamp, nil)
+	mockProcessor.On("CanApprove", owners[0], reactions[0], cfg).Return(true)
+
+	// Call the function
+	approved, err := CheckMandatoryApproval(mockClient, cfg, projectID, codeOwnersContent, mockProcessor)
+
+	// Assertions
+	assert.NoError(t, err)
+	assert.False(t, approved)
+
+	// Ensure that all expectations were met
+	mockProcessor.AssertExpectations(t)
+	mockClient.AssertExpectations(t)
+}
