@@ -360,6 +360,8 @@ func TestFilterApprovals_WithValidApprovals(t *testing.T) {
 	// Initialize mocks
 	mockProcessor := new(MockCodeOwnersProcessor)
 
+	date := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+
 	// Sample data
 	owners := []processor.CodeOwner{
 		{Owner: "owner1"},
@@ -380,7 +382,7 @@ func TestFilterApprovals_WithValidApprovals(t *testing.T) {
 	mockProcessor.On("CanApprove", owners[1], reactions[1], cfg).Return(true)
 
 	// Call the function
-	approvedBy := filterApprovals(owners, reactions, cfg, mockProcessor)
+	approvedBy := filterApprovals(owners, reactions, cfg, date, mockProcessor)
 
 	// Assertions
 	expected := []string{"user1", "user2"}
@@ -394,6 +396,8 @@ func TestFilterApprovals_WithValidApprovals(t *testing.T) {
 func TestFilterApprovals_NoValidApprovals(t *testing.T) {
 	// Initialize mocks
 	mockProcessor := new(MockCodeOwnersProcessor)
+
+	date := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
 
 	// Sample data
 	owners := []processor.CodeOwner{
@@ -410,7 +414,7 @@ func TestFilterApprovals_NoValidApprovals(t *testing.T) {
 	mockProcessor.On("CanApprove", owners[0], reactions[0], cfg).Return(false)
 
 	// Call the function
-	approvedBy := filterApprovals(owners, reactions, cfg, mockProcessor)
+	approvedBy := filterApprovals(owners, reactions, cfg, date, mockProcessor)
 
 	// Assertions
 	var expected []string
