@@ -2,12 +2,14 @@
 
 # atlantis-emoji-gate
 
-![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/shini4i/atlantis-emoji-gate/run-tests.yml?branch=main)
-![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/shini4i/atlantis-emoji-gate)
-![GitHub release (latest by date)](https://img.shields.io/github/v/release/shini4i/atlantis-emoji-gate)
-[![codecov](https://codecov.io/gh/shini4i/atlantis-emoji-gate/graph/badge.svg?token=1AZLXDU1HP)](https://codecov.io/gh/shini4i/atlantis-emoji-gate)
-[![Go Report Card](https://goreportcard.com/badge/github.com/shini4i/atlantis-emoji-gate)](https://goreportcard.com/report/github.com/shini4i/atlantis-emoji-gate)
-![GitHub](https://img.shields.io/github/license/shini4i/atlantis-emoji-gate)
+![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/shini4i/atlantis-emoji-gate/run-tests.yml?branch=main&style=plastic)
+![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/shini4i/atlantis-emoji-gate?style=plastic)
+![GitHub release (latest by date)](https://img.shields.io/github/v/release/shini4i/atlantis-emoji-gate?style=plastic)
+![Codecov](https://img.shields.io/codecov/c/github/shini4i/atlantis-emoji-gate?token=1AZLXDU1HP&style=plastic)
+[![Go Report Card](https://goreportcard.com/badge/github.com/shini4i/atlantis-emoji-gate?style=plastic)](https://goreportcard.com/report/github.com/shini4i/atlantis-emoji-gate)
+![GitHub](https://img.shields.io/github/license/shini4i/atlantis-emoji-gate?style=plastic)
+
+<img src="https://raw.githubusercontent.com/shini4i/assets/main/src/atlantis-emoji-gate/atlantis-emoji-gate.png" alt="alt text" width="30%">
 
 A tool that implements mandatory approvals for Atlantis workflows in GitLab Community Edition (CE) using emoji reactions as an approval mechanism.
 
