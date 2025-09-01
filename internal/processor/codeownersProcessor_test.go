@@ -2,223 +2,188 @@ package processor
 
 import (
 	"errors"
+	"io"
 	"strings"
 	"testing"
 
 	"github.com/shini4i/atlantis-emoji-gate/internal/client"
 	"github.com/shini4i/atlantis-emoji-gate/internal/config"
-
 	"github.com/stretchr/testify/assert"
 )
 
-// FaultyReader simulates an error when reading content.
+// FaultyReader simulates an I/O error, which we'll use to test error handling.
 type FaultyReader struct{}
 
 func (f FaultyReader) Read(p []byte) (n int, err error) {
 	return 0, errors.New("simulated read error")
 }
 
-func TestCanApprove(t *testing.T) {
-	cfg := config.GitlabConfig{
+func TestCheckApproval(t *testing.T) {
+	// Base configuration and reaction user used across many tests.
+	// We will override fields as needed in specific test cases.
+	baseCfg := config.GitlabConfig{
 		ApproveEmoji:  "thumbsup",
-		MrAuthor:      "author",
+		MrAuthor:      "mr_author",
 		Insecure:      false,
-		TerraformPath: "matching-path/subdir",
+		TerraformPath: "project/staging/app",
 	}
 
-	codeOwnersProcessor := CodeOwnersProcessor{}
+	approvingUser := &client.AwardEmoji{
+		Name: "thumbsup",
+		User: client.User{Username: "approver"},
+	}
+
+	// Create the processor once.
+	proc := NewProcessor()
 
 	testCases := []struct {
-		name        string
-		owner       CodeOwner
-		reaction    *client.AwardEmoji
-		tfPath      string
-		wantApprove bool
+		name         string
+		codeowners   io.Reader
+		reaction     *client.AwardEmoji
+		config       config.GitlabConfig
+		wantApproved bool
+		wantErr      string // Substring of the expected error, if any.
 	}{
 		{
-			name: "Owner does not match",
-			owner: CodeOwner{
-				Owner: "user2",
-				Path:  "*",
-			},
-			reaction: &client.AwardEmoji{
-				Name: "thumbsup",
-				User: struct {
-					Username string `json:"username"`
-				}{Username: "user1"},
-			},
-			wantApprove: false,
+			name:         "Success: Wildcard path matches",
+			codeowners:   strings.NewReader("* @approver"),
+			reaction:     approvingUser,
+			config:       baseCfg,
+			wantApproved: true,
 		},
 		{
-			name: "Emoji does not match",
-			owner: CodeOwner{
-				Owner: "user1",
-				Path:  "*",
-			},
-			reaction: &client.AwardEmoji{
-				Name: "thumbsdown",
-				User: struct {
-					Username string `json:"username"`
-				}{Username: "user1"},
-			},
-			wantApprove: false,
+			name: "Success: Direct path glob matches",
+			// Using 'project/staging/*' is a more precise glob pattern than 'project/staging/'.
+			// This will correctly match 'project/staging/app'.
+			codeowners:   strings.NewReader("project/staging/* @approver"),
+			reaction:     approvingUser,
+			config:       baseCfg,
+			wantApproved: true,
 		},
 		{
-			name: "MR author cannot approve their own MR",
-			owner: CodeOwner{
-				Owner: "author",
-				Path:  "*",
-			},
-			reaction: &client.AwardEmoji{
-				Name: "thumbsup",
-				User: struct {
-					Username string `json:"username"`
-				}{Username: "author"},
-			},
-			wantApprove: false,
+			name:         "Failure: User is not in the CODEOWNERS list",
+			codeowners:   strings.NewReader("* @some_other_user"),
+			reaction:     approvingUser,
+			config:       baseCfg,
+			wantApproved: false,
 		},
 		{
-			name: "Path does not match",
-			owner: CodeOwner{
-				Owner: "user1",
-				Path:  "non-matching-path",
-			},
+			name:       "Failure: Wrong emoji is used for reaction",
+			codeowners: strings.NewReader("* @approver"),
 			reaction: &client.AwardEmoji{
-				Name: "thumbsup",
-				User: struct {
-					Username string `json:"username"`
-				}{Username: "user1"},
+				Name: "wrong_emoji", // Different from config
+				User: client.User{Username: "approver"},
 			},
-			// We'll override TerraformPath to something else
-			tfPath:      "different-path",
-			wantApprove: false,
+			config:       baseCfg,
+			wantApproved: false,
 		},
 		{
-			name: "Wildcard owner path matches everything",
-			owner: CodeOwner{
-				Owner: "user1",
-				Path:  "*",
-			},
+			name:       "Failure: MR author tries to approve their own MR",
+			codeowners: strings.NewReader("* @mr_author"),
 			reaction: &client.AwardEmoji{
 				Name: "thumbsup",
-				User: struct {
-					Username string `json:"username"`
-				}{Username: "user1"},
+				User: client.User{Username: "mr_author"}, // Same as MrAuthor in config
 			},
-			wantApprove: true,
+			config:       baseCfg,
+			wantApproved: false,
 		},
 		{
-			name: "Terraform path matches owner path prefix",
-			owner: CodeOwner{
-				Owner: "user3",
-				Path:  "matching-path",
-			},
+			name:       "Success: MR author can approve if insecure mode is on",
+			codeowners: strings.NewReader("* @mr_author"),
 			reaction: &client.AwardEmoji{
 				Name: "thumbsup",
-				User: struct {
-					Username string `json:"username"`
-				}{Username: "user3"},
+				User: client.User{Username: "mr_author"},
 			},
-			wantApprove: true,
+			config: func() config.GitlabConfig {
+				c := baseCfg
+				c.Insecure = true // Override insecure mode
+				return c
+			}(),
+			wantApproved: true,
 		},
 		{
-			name: "Terraform path does not match owner path prefix",
-			owner: CodeOwner{
-				Owner: "user4",
-				Path:  "non-matching-path",
-			},
-			reaction: &client.AwardEmoji{
-				Name: "thumbsup",
-				User: struct {
-					Username string `json:"username"`
-				}{Username: "user4"},
-			},
-			wantApprove: false,
+			name:         "Failure: Path does not match any rule",
+			codeowners:   strings.NewReader("project/production/* @approver"),
+			reaction:     approvingUser,
+			config:       baseCfg, // TerraformPath is 'project/staging/app'
+			wantApproved: false,
+		},
+		{
+			name:         "Failure: Reader returns an error",
+			codeowners:   &FaultyReader{},
+			reaction:     approvingUser,
+			config:       baseCfg,
+			wantApproved: false,
+			wantErr:      "simulated read error",
+		},
+		{
+			name:         "Failure: Malformed pattern in CODEOWNERS is an error",
+			codeowners:   strings.NewReader("[* @approver"), // Malformed glob pattern
+			reaction:     approvingUser,
+			config:       baseCfg,
+			wantApproved: false,
+			wantErr:      "invalid pattern",
+		},
+		{
+			name:         "Behavior: Empty file results in no approval",
+			codeowners:   strings.NewReader(""),
+			reaction:     approvingUser,
+			config:       baseCfg,
+			wantApproved: false,
+		},
+		{
+			name:         "Behavior: File with only comments and malformed lines results in no approval",
+			codeowners:   strings.NewReader("# A comment\n\n   \nmalformed_line_with_one_token"),
+			reaction:     approvingUser,
+			config:       baseCfg,
+			wantApproved: false,
+		},
+		{
+			name: "CRITICAL: Last matching rule wins (user in last rule)",
+			codeowners: strings.NewReader(`
+				* @generic_admin
+				project/staging/* @approver
+			`),
+			reaction:     approvingUser,
+			config:       baseCfg,
+			wantApproved: true,
+		},
+		{
+			name: "CRITICAL: Last matching rule wins (user not in last rule)",
+			codeowners: strings.NewReader(`
+				* @approver
+				project/staging/* @stage_lead_only
+			`),
+			reaction:     approvingUser,
+			config:       baseCfg,
+			wantApproved: false,
+		},
+		{
+			name: "CRITICAL: Multiple owners on the last matching line",
+			codeowners: strings.NewReader(`
+				* @admin
+				project/staging/* @lead @other_approver @approver
+			`),
+			reaction:     approvingUser,
+			config:       baseCfg,
+			wantApproved: true,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			// Copy the base config so we can override TerraformPath if needed
-			localCfg := cfg
-			if tc.tfPath != "" {
-				localCfg.TerraformPath = tc.tfPath
-			}
+			// Act
+			isApproved, err := proc.CheckApproval(tc.codeowners, tc.reaction, tc.config)
 
-			got := codeOwnersProcessor.CanApprove(tc.owner, tc.reaction, localCfg)
-			assert.Equal(t, tc.wantApprove, got)
-		})
-	}
-}
-
-func TestParseCodeOwnersErrors(t *testing.T) {
-	coProcessor := CodeOwnersProcessor{}
-
-	testCases := []struct {
-		name          string
-		input         string
-		reader        *FaultyReader // Only used if simulating a read error
-		wantErrSubstr string        // if non-empty, we expect an error containing this
-		wantEmpty     bool          // if true, we expect owners to be empty
-		wantOwners    []CodeOwner   // for valid lines
-	}{
-		{
-			name:          "Scanner Error",
-			reader:        &FaultyReader{},
-			wantErrSubstr: "error reading CODEOWNERS content",
-		},
-		{
-			name:       "Empty Content",
-			input:      "",
-			wantEmpty:  true,
-			wantOwners: nil, // owners should be empty
-		},
-		{
-			name:       "Malformed Lines",
-			input:      "# Comment Only\ndocs\n      ",
-			wantEmpty:  true,
-			wantOwners: nil,
-		},
-		{
-			name: "Valid and Malformed Mixed",
-			input: `
-* @user1
-docs
-/scripts @user2
-#comment
-`,
-			wantOwners: []CodeOwner{
-				{Path: "*", Owner: "user1"},
-				{Path: "/scripts", Owner: "user2"},
-			},
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			var owners []CodeOwner
-			var err error
-
-			if tc.reader != nil {
-				// Use faulty reader
-				owners, err = coProcessor.ParseCodeOwners(tc.reader)
-			} else {
-				owners, err = coProcessor.ParseCodeOwners(strings.NewReader(tc.input))
-			}
-
-			if tc.wantErrSubstr != "" {
+			// Assert
+			if tc.wantErr != "" {
 				assert.Error(t, err)
-				assert.Contains(t, err.Error(), tc.wantErrSubstr)
+				assert.Contains(t, err.Error(), tc.wantErr)
 			} else {
 				assert.NoError(t, err)
 			}
 
-			if tc.wantEmpty {
-				assert.Empty(t, owners)
-			}
-			if tc.wantOwners != nil {
-				assert.Equal(t, tc.wantOwners, owners)
-			}
+			assert.Equal(t, tc.wantApproved, isApproved)
 		})
 	}
 }

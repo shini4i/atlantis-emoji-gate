@@ -11,7 +11,7 @@ import (
 	"github.com/shini4i/atlantis-emoji-gate/internal/processor"
 )
 
-// fetchCodeOwnersContent retrieves the CODEOWNERS file content based on configuration.
+// fetchCodeOwnersContent retrieves the CODEOWNERS file content.
 func fetchCodeOwnersContent(client client.GitlabClientInterface, cfg config.GitlabConfig, project *client.Project) (string, error) {
 	if cfg.CodeOwnersRepo != "" {
 		codeOwnersRepo, err := client.GetProject(cfg.CodeOwnersRepo)
@@ -23,20 +23,14 @@ func fetchCodeOwnersContent(client client.GitlabClientInterface, cfg config.Gitl
 	return client.GetFileContent(project.ID, project.DefaultBranch, cfg.CodeOwnersPath)
 }
 
-// CheckMandatoryApproval validates approvals against CODEOWNERS.
-func CheckMandatoryApproval(client client.GitlabClientInterface, cfg config.GitlabConfig, projectID int, codeOwnersContent string, processor processor.CodeOwnersProcessorInterface) (bool, error) {
-	owners, err := processor.ParseCodeOwners(strings.NewReader(codeOwnersContent))
-	if err != nil {
-		return false, fmt.Errorf("failed to parse CODEOWNERS: %w", err)
-	}
-
+// CheckMandatoryApproval validates approvals against the CODEOWNERS file.
+func CheckMandatoryApproval(client client.GitlabClientInterface, cfg config.GitlabConfig, projectID int, codeOwnersContent string, proc processor.Processor) (bool, error) {
 	reactions, err := client.ListAwardEmojis(projectID, cfg.PullRequestID)
 	if err != nil {
 		return false, fmt.Errorf("failed to fetch reactions: %w", err)
 	}
 
 	var lastCommitTimestamp time.Time
-
 	if cfg.Restricted {
 		lastCommitTimestamp, err = client.GetLatestCommitTimestamp(projectID, cfg.PullRequestID)
 		if err != nil {
@@ -44,37 +38,29 @@ func CheckMandatoryApproval(client client.GitlabClientInterface, cfg config.Gitl
 		}
 	}
 
-	approvedBy := filterApprovals(owners, reactions, cfg, lastCommitTimestamp, processor)
-	if len(approvedBy) > 0 {
-		fmt.Printf("--> Mandatory approval provided by: %v\n", approvedBy)
-		return true, nil
+	for _, reaction := range reactions {
+		if cfg.Restricted && reaction.UpdatedAt.Before(lastCommitTimestamp) {
+			fmt.Printf("--> Skipping outdated approval by %s from %v\n", reaction.User.Username, reaction.UpdatedAt)
+			continue
+		}
+
+		isApproved, err := proc.CheckApproval(strings.NewReader(codeOwnersContent), reaction, cfg)
+		if err != nil {
+			return false, fmt.Errorf("error during approval check: %w", err)
+		}
+
+		if isApproved {
+			fmt.Printf("--> Mandatory approval provided by: %s\n", reaction.User.Username)
+			return true, nil
+		}
 	}
 
 	fmt.Println("Mandatory approval not found")
 	return false, nil
 }
 
-// filterApprovals identifies valid approvers from reactions.
-func filterApprovals(owners []processor.CodeOwner, reactions []*client.AwardEmoji, cfg config.GitlabConfig, lastCommitTimestamp time.Time, processor processor.CodeOwnersProcessorInterface) []string {
-	var approvedBy []string
-
-	for _, reaction := range reactions {
-		for _, owner := range owners {
-			if processor.CanApprove(owner, reaction, cfg) {
-				if cfg.Restricted && reaction.UpdatedAt.Before(lastCommitTimestamp) {
-					fmt.Printf("--> Skipping outdated approval by %s\n", reaction.User.Username)
-					continue
-				}
-				approvedBy = append(approvedBy, reaction.User.Username)
-			}
-		}
-	}
-
-	return approvedBy
-}
-
-// ProcessMR handles the overall MR processing workflow.
-func ProcessMR(client client.GitlabClientInterface, cfg config.GitlabConfig, processor processor.CodeOwnersProcessorInterface) (bool, error) {
+// ProcessMR orchestrates the high-level workflow for processing a merge request.
+func ProcessMR(client client.GitlabClientInterface, cfg config.GitlabConfig, proc processor.Processor) (bool, error) {
 	project, err := client.GetProject(fmt.Sprintf("%s/%s", cfg.BaseRepoOwner, cfg.BaseRepoName))
 	if err != nil {
 		return false, fmt.Errorf("failed to get project: %w", err)
@@ -85,22 +71,25 @@ func ProcessMR(client client.GitlabClientInterface, cfg config.GitlabConfig, pro
 		return false, fmt.Errorf("failed to fetch CODEOWNERS file: %w", err)
 	}
 
-	return CheckMandatoryApproval(client, cfg, project.ID, codeOwnersContent, processor)
+	return CheckMandatoryApproval(client, cfg, project.ID, codeOwnersContent, proc)
 }
 
-// Run handles the program's main logic.
-func Run(client client.GitlabClientInterface, cfg config.GitlabConfig, processor processor.CodeOwnersProcessorInterface) int {
+// Run is the primary entrypoint for the application logic.
+func Run(client client.GitlabClientInterface, cfg config.GitlabConfig, proc processor.Processor) int {
 	if cfg.Insecure {
 		fmt.Println("Insecure mode enabled: MR author can approve their own MR if they are in CODEOWNERS")
 	}
 
-	approved, err := ProcessMR(client, cfg, processor)
+	approved, err := ProcessMR(client, cfg, proc)
 	if err != nil {
 		fmt.Printf("Error processing MR: %v\n", err)
 		return 1
 	}
 
-	return map[bool]int{true: 0, false: 1}[approved]
+	if approved {
+		return 0
+	}
+	return 1
 }
 
 func main() {
@@ -109,7 +98,8 @@ func main() {
 		panic(fmt.Sprintf("Error parsing GitLab config: %v", err))
 	}
 
-	codeOwnersProcessor := &processor.CodeOwnersProcessor{}
-	client := client.NewGitlabClient(cfg.Url, cfg.Token)
-	os.Exit(Run(client, cfg, codeOwnersProcessor))
+	gitlabClient := client.NewGitlabClient(cfg.Url, cfg.Token)
+	proc := processor.NewProcessor()
+
+	os.Exit(Run(gitlabClient, cfg, proc))
 }
