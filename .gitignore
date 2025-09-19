@@ -5,5 +5,10 @@
 # Build files
 bin/
 
+# Nix
+.direnv
+result
+result/
+
 # Project configuration
 .env
