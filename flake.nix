@@ -18,6 +18,7 @@
         buildInputs = [
           goToolchain
           pkgs.gopls
+          pkgs.delve
           pkgs.golangci-lint
           pkgs.gitleaks
           pkgs.go-junit-report
