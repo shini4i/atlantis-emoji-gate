@@ -22,8 +22,6 @@ func TestNewGitlabConfig(t *testing.T) {
 		t.Setenv("PULL_NUM", "123")
 		t.Setenv("PULL_AUTHOR", "example-author")
 		t.Setenv("CODEOWNERS_PATH", ".test/CODEOWNERS")
-		t.Setenv("ATLANTIS_DATA_DIR", "/data")
-		t.Setenv("WORKSPACE", "default")
 		t.Setenv("REPO_REL_DIR", "terraform/provision")
 
 		// Call the function to test
@@ -32,7 +30,7 @@ func TestNewGitlabConfig(t *testing.T) {
 		assert.NoError(t, err)
 
 		// Assert the expected values
-		assert.Equal(t, "gitlab.example.com", cfg.Url)
+		assert.Equal(t, "gitlab.example.com", cfg.URL)
 		assert.Equal(t, "example-token", cfg.Token)
 		assert.Equal(t, "thumbsup", cfg.ApproveEmoji)
 		assert.Equal(t, "example-author", cfg.MrAuthor)

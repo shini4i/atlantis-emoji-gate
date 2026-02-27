@@ -10,14 +10,18 @@ install-deps: ## Install dependencies
 	@echo "===> Installing dependencies"
 	@go install github.com/jstemmer/go-junit-report@latest
 
+.PHONY: generate
+generate: ## Generate mocks and other code
+	@go generate ./...
+
 .PHONY: test-coverage
-test-coverage: ## Run tests with coverage
+test-coverage: generate ## Run tests with coverage
 	@go test -v -coverprofile=coverage.out ./... -count=1 2>&1 | tee /dev/stderr | go-junit-report -set-exit-code > report.xml
 
 .PHONY: test
-test: ## Run tests
+test: generate ## Run tests
 	@go test -v ./... -count=1
 
 .PHONY: build
 build: ## Build the binary
-	@GOOS=linux GOARCH=amd64 GO_ENABLED=0 go build -ldflags="-s -w" -o bin/atlantis-emoji-gate ./cmd/emoji-gate
+	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/atlantis-emoji-gate ./cmd/emoji-gate

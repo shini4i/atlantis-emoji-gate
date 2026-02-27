@@ -10,5 +10,8 @@ bin/
 result
 result/
 
+# Generated mocks (regenerate with: go generate ./...)
+**/mocks/
+
 # Project configuration
 .env

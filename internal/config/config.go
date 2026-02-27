@@ -4,8 +4,10 @@ import (
 	envConfig "github.com/caarlos0/env/v11"
 )
 
+// GitlabConfig holds the configuration parsed from environment variables
+// required to interact with the GitLab API and evaluate merge request approvals.
 type GitlabConfig struct {
-	Url            string `env:"ATLANTIS_GITLAB_HOSTNAME,required,notEmpty"`
+	URL            string `env:"ATLANTIS_GITLAB_HOSTNAME,required,notEmpty"`
 	Token          string `env:"ATLANTIS_GITLAB_TOKEN,required,notEmpty"`
 	ApproveEmoji   string `env:"APPROVE_EMOJI,notEmpty" envDefault:"thumbsup"`
 	BaseRepoOwner  string `env:"BASE_REPO_OWNER,required,notEmpty"`
@@ -21,9 +23,9 @@ type GitlabConfig struct {
 
 // NewGitlabConfig parses environment variables into GitlabConfig.
 func NewGitlabConfig() (GitlabConfig, error) {
-	if cfg, err := envConfig.ParseAs[GitlabConfig](); err != nil {
+	cfg, err := envConfig.ParseAs[GitlabConfig]()
+	if err != nil {
 		return GitlabConfig{}, err
-	} else {
-		return cfg, nil
 	}
+	return cfg, nil
 }
