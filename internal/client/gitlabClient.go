@@ -21,7 +21,7 @@ const (
 	maxPerPage = 100
 )
 
-//go:generate mockgen -destination=mocks/mock_client.go -package=mocks . GitlabClientInterface
+//go:generate go tool mockgen -destination=mocks/mock_client.go -package=mocks . GitlabClientInterface
 
 // GitlabClientInterface defines the methods that must be implemented by a GitLab client.
 // GetMrCommits is intentionally excluded as it is only used internally by GetLatestCommitTimestamp.
@@ -193,17 +193,14 @@ func (g *GitlabClient) GetFileContent(ctx context.Context, projectID int, branch
 	return string(decodedContent), nil
 }
 
-// GetMrCommits retrieves all commits for the specified project and merge request.
-// Results are paginated to ensure all commits are retrieved.
-func (g *GitlabClient) GetMrCommits(ctx context.Context, projectID, mrID int) ([]*Commit, error) {
-	path := fmt.Sprintf("projects/%d/merge_requests/%d/commits", projectID, mrID)
-	return getAll[*Commit](ctx, g, path)
-}
-
-// GetLatestCommitTimestamp retrieves the timestamp of the latest commit for the specified project and merge request.
+// GetLatestCommitTimestamp retrieves the creation timestamp of the most recent
+// commit in the specified merge request. GitLab returns merge request commits in
+// reverse chronological order, so only the first commit of the first page is
+// requested rather than paginating through the entire commit history.
 func (g *GitlabClient) GetLatestCommitTimestamp(ctx context.Context, projectID, mrID int) (time.Time, error) {
-	commits, err := g.GetMrCommits(ctx, projectID, mrID)
-	if err != nil {
+	var commits []*Commit
+	path := fmt.Sprintf("projects/%d/merge_requests/%d/commits?per_page=1", projectID, mrID)
+	if err := g.get(ctx, path, &commits); err != nil {
 		return time.Time{}, err
 	}
 	if len(commits) == 0 {

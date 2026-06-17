@@ -11,7 +11,7 @@ import (
 	"github.com/shini4i/atlantis-emoji-gate/internal/config"
 )
 
-//go:generate mockgen -destination=mocks/mock_processor.go -package=mocks . Processor
+//go:generate go tool mockgen -destination=mocks/mock_processor.go -package=mocks . Processor
 
 // Processor defines the contract for checking approvals against a CODEOWNERS file.
 type Processor interface {

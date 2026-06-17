@@ -1,0 +1,41 @@
+version: '3'
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+    silent: true
+
+  generate:
+    desc: Generate mocks and other code
+    cmds:
+      - go generate ./...
+
+  lint:
+    desc: Run golangci-lint
+    cmds:
+      - golangci-lint run ./...
+
+  security:
+    desc: Run gosec and govulncheck security scanners
+    cmds:
+      - gosec -quiet ./...
+      - govulncheck ./...
+
+  test:
+    desc: Run tests
+    deps: [generate]
+    cmds:
+      - go test -v ./... -count=1
+
+  test-coverage:
+    desc: Run tests with coverage and produce a JUnit report
+    deps: [generate]
+    cmds:
+      - go test -v -coverprofile=coverage.out ./... -count=1 2>&1 | tee /dev/stderr | go tool go-junit-report -set-exit-code > report.xml
+
+  build:
+    desc: Build the binary
+    cmds:
+      - GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/atlantis-emoji-gate ./cmd/emoji-gate

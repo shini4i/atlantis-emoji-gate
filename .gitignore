@@ -5,6 +5,10 @@
 # Build files
 bin/
 
+# Test artifacts
+coverage.out
+report.xml
+
 # Nix
 .direnv
 result

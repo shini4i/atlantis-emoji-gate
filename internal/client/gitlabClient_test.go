@@ -230,38 +230,6 @@ func TestGitlabClient_Pagination(t *testing.T) {
 		assert.Equal(t, "user3", emojis[2].User.Username)
 	})
 
-	t.Run("GetMrCommits collects multiple pages", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			page := r.URL.Query().Get("page")
-			pageNum, _ := strconv.Atoi(page)
-
-			var commits []*Commit
-			switch pageNum {
-			case 1:
-				commits = []*Commit{
-					{ID: "abc", CreatedAt: time.Date(2024, 1, 3, 0, 0, 0, 0, time.UTC)},
-				}
-				w.Header().Set("X-Next-Page", "2")
-			case 2:
-				commits = []*Commit{
-					{ID: "def", CreatedAt: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC)},
-				}
-			}
-
-			response, _ := json.Marshal(commits)
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write(response)
-		}))
-		defer server.Close()
-
-		client := newTestGitlabClient(server.URL)
-		commits, err := client.GetMrCommits(context.Background(), 1, 1)
-		assert.NoError(t, err)
-		assert.Len(t, commits, 2)
-		assert.Equal(t, "abc", commits[0].ID)
-		assert.Equal(t, "def", commits[1].ID)
-	})
-
 	t.Run("pagination error on second page propagates", func(t *testing.T) {
 		callCount := 0
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -524,40 +492,6 @@ func TestGitlabClient_GetFileContent_Base64DecodeFailure(t *testing.T) {
 	assert.Contains(t, err.Error(), "failed to decode base64")
 }
 
-// Tests for GetMrCommits.
-func TestGitlabClient_GetMrCommits(t *testing.T) {
-	server := mockGitLabServer()
-	defer server.Close()
-
-	client := newTestGitlabClient(server.URL)
-
-	t.Run("successful commits retrieval", func(t *testing.T) {
-		commits, err := client.GetMrCommits(context.Background(), 1, 1)
-		assert.NoError(t, err)
-		assert.Len(t, commits, 2)
-		assert.Equal(t, "abc123", commits[0].ID)
-		assert.Equal(t,
-			time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC),
-			commits[0].CreatedAt)
-	})
-
-	t.Run("error on invalid project ID", func(t *testing.T) {
-		commits, err := client.GetMrCommits(context.Background(), -1, 1)
-		assert.Error(t, err)
-		assert.Nil(t, commits)
-	})
-
-	t.Run("error on non-existent merge request", func(t *testing.T) {
-		client := NewGitlabClient("valid-url", "dummyToken")
-		client.client = &http.Client{
-			Transport: newMockTransport(http.StatusNotFound, "not found", nil),
-		}
-		commits, err := client.GetMrCommits(context.Background(), 1, 999)
-		assert.Error(t, err)
-		assert.Nil(t, commits)
-	})
-}
-
 // Tests for GetLatestCommitTimestamp.
 func TestGitlabClient_GetLatestCommitTimestamp(t *testing.T) {
 	server := mockGitLabServer()
@@ -572,6 +506,28 @@ func TestGitlabClient_GetLatestCommitTimestamp(t *testing.T) {
 		assert.Equal(t, expectedTime, timestamp)
 	})
 
+	t.Run("requests only the latest commit with per_page=1", func(t *testing.T) {
+		latest := time.Date(2024, 3, 2, 0, 0, 0, 0, time.UTC)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// The optimization must request a single commit rather than
+			// paginating the full history.
+			assert.Equal(t, "1", r.URL.Query().Get("per_page"))
+			commits := []*Commit{
+				{ID: "newest", CreatedAt: latest},
+				{ID: "older", CreatedAt: latest.Add(-time.Hour)},
+			}
+			response, _ := json.Marshal(commits)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(response)
+		}))
+		defer server.Close()
+
+		client := newTestGitlabClient(server.URL)
+		timestamp, err := client.GetLatestCommitTimestamp(context.Background(), 1, 1)
+		assert.NoError(t, err)
+		assert.Equal(t, latest, timestamp)
+	})
+
 	t.Run("error when no commits exist", func(t *testing.T) {
 		emptyClient := NewGitlabClient("valid-url", "dummyToken")
 		emptyClient.client = &http.Client{
@@ -582,7 +538,7 @@ func TestGitlabClient_GetLatestCommitTimestamp(t *testing.T) {
 		assert.Contains(t, err.Error(), "no commits found")
 	})
 
-	t.Run("error propagation from GetMrCommits", func(t *testing.T) {
+	t.Run("error propagation from API", func(t *testing.T) {
 		errorClient := NewGitlabClient("valid-url", "dummyToken")
 		errorClient.client = &http.Client{
 			Transport: newMockTransport(http.StatusInternalServerError,
