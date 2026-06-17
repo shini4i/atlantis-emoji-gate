@@ -2,13 +2,15 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -18,6 +20,7 @@ import (
 
 // ------------------ Mock Types and Helpers ------------------
 
+// MockRoundTripper is a configurable http.RoundTripper for testing.
 type MockRoundTripper struct {
 	RoundTripFunc func(req *http.Request) (*http.Response, error)
 }
@@ -49,6 +52,7 @@ type FaultyReadCloser struct {
 	FailClose bool
 }
 
+// Read implements io.Reader, optionally returning an error.
 func (f *FaultyReadCloser) Read(p []byte) (n int, err error) {
 	if f.FailRead {
 		return 0, fmt.Errorf("mocked read error")
@@ -57,6 +61,7 @@ func (f *FaultyReadCloser) Read(p []byte) (n int, err error) {
 	return len(`{"key": "value"}`), io.EOF
 }
 
+// Close implements io.Closer, optionally returning an error.
 func (f *FaultyReadCloser) Close() error {
 	if f.FailClose {
 		return fmt.Errorf("mocked close error")
@@ -81,9 +86,7 @@ func mockGitLabServer() *httptest.Server {
 
 	mux.HandleFunc("/api/v4/projects/1/merge_requests/1/award_emoji", func(w http.ResponseWriter, r *http.Request) {
 		emojis := []*AwardEmoji{
-			{Name: "thumbsup", User: struct {
-				Username string `json:"username"`
-			}{Username: "user1"}},
+			{Name: "thumbsup", User: User{Username: "user1"}},
 		}
 		response, _ := json.Marshal(emojis)
 		w.Header().Set("Content-Type", "application/json")
@@ -103,7 +106,6 @@ func mockGitLabServer() *httptest.Server {
 		_, _ = w.Write(response)
 	})
 
-	// Add new endpoint for merge request commits
 	mux.HandleFunc("/api/v4/projects/1/merge_requests/1/commits", func(w http.ResponseWriter, r *http.Request) {
 		commits := []*Commit{
 			{
@@ -121,11 +123,11 @@ func mockGitLabServer() *httptest.Server {
 	return httptest.NewServer(mux)
 }
 
-// Helper to create a test GitLab client pointing to the mock server.
+// newTestGitlabClient creates a test GitLab client pointing to the mock server.
 func newTestGitlabClient(baseURL string) *GitlabClient {
-	// 'baseURL[7:]' strips "http://" from the server URL.
-	client := NewGitlabClient(baseURL[7:], "dummyToken")
-	client.Scheme = "http"
+	trimmed := strings.TrimPrefix(baseURL, "http://")
+	client := NewGitlabClient(trimmed, "dummyToken")
+	client.scheme = "http"
 	return client
 }
 
@@ -138,14 +140,14 @@ func TestGitlabClient_SuccessCases(t *testing.T) {
 	client := newTestGitlabClient(server.URL)
 
 	t.Run("GetProject", func(t *testing.T) {
-		project, err := client.GetProject("mockProjectPath")
+		project, err := client.GetProject(context.Background(), "mockProjectPath")
 		assert.NoError(t, err)
 		assert.Equal(t, 1, project.ID)
 		assert.Equal(t, "main", project.DefaultBranch)
 	})
 
 	t.Run("ListAwardEmojis", func(t *testing.T) {
-		emojis, err := client.ListAwardEmojis(1, 1)
+		emojis, err := client.ListAwardEmojis(context.Background(), 1, 1)
 		assert.NoError(t, err)
 		assert.Len(t, emojis, 1)
 		assert.Equal(t, "thumbsup", emojis[0].Name)
@@ -153,13 +155,187 @@ func TestGitlabClient_SuccessCases(t *testing.T) {
 	})
 
 	t.Run("GetFileContent", func(t *testing.T) {
-		content, err := client.GetFileContent(1, "main", "CODEOWNERS")
+		content, err := client.GetFileContent(context.Background(), 1, "main", "CODEOWNERS")
 		assert.NoError(t, err)
 		assert.Equal(t, "* @user1\n", content)
 	})
 }
 
-// Tests focusing on error behavior in the low-level `get()` method.
+func TestGitlabClient_Timeout(t *testing.T) {
+	client := NewGitlabClient("example.com", "token")
+	assert.Equal(t, defaultTimeout, client.client.Timeout)
+}
+
+func TestGitlabClient_GetFileContent_URLEncoding(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The path ".github/CODEOWNERS" should be URL-encoded as ".github%2FCODEOWNERS".
+		// Go's http server decodes %2F in the Path, so we check RawPath instead.
+		rawPath := r.URL.RawPath
+		if rawPath == "" {
+			rawPath = r.URL.Path
+		}
+		assert.Contains(t, rawPath, ".github%2FCODEOWNERS",
+			"file path should be URL-encoded in the request")
+
+		content := base64.StdEncoding.EncodeToString([]byte("* @user1\n"))
+		response, _ := json.Marshal(map[string]string{"content": content})
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(response)
+	}))
+	defer server.Close()
+
+	client := newTestGitlabClient(server.URL)
+
+	content, err := client.GetFileContent(context.Background(), 1, "main", ".github/CODEOWNERS")
+	assert.NoError(t, err)
+	assert.Equal(t, "* @user1\n", content)
+}
+
+// TestGitlabClient_Pagination verifies that paginated endpoints collect results from all pages.
+func TestGitlabClient_Pagination(t *testing.T) {
+	t.Run("ListAwardEmojis collects multiple pages", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			page := r.URL.Query().Get("page")
+			pageNum, _ := strconv.Atoi(page)
+
+			var emojis []*AwardEmoji
+			switch pageNum {
+			case 1:
+				emojis = []*AwardEmoji{
+					{Name: "thumbsup", User: User{Username: "user1"}},
+					{Name: "thumbsup", User: User{Username: "user2"}},
+				}
+				w.Header().Set("X-Next-Page", "2")
+			case 2:
+				emojis = []*AwardEmoji{
+					{Name: "thumbsup", User: User{Username: "user3"}},
+				}
+				// No X-Next-Page header means last page
+			default:
+				t.Errorf("unexpected page: %d", pageNum)
+			}
+
+			response, _ := json.Marshal(emojis)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(response)
+		}))
+		defer server.Close()
+
+		client := newTestGitlabClient(server.URL)
+		emojis, err := client.ListAwardEmojis(context.Background(), 1, 1)
+		assert.NoError(t, err)
+		assert.Len(t, emojis, 3)
+		assert.Equal(t, "user1", emojis[0].User.Username)
+		assert.Equal(t, "user2", emojis[1].User.Username)
+		assert.Equal(t, "user3", emojis[2].User.Username)
+	})
+
+	t.Run("pagination error on second page propagates", func(t *testing.T) {
+		callCount := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			callCount++
+			if callCount == 1 {
+				emojis := []*AwardEmoji{{Name: "thumbsup", User: User{Username: "user1"}}}
+				response, _ := json.Marshal(emojis)
+				w.Header().Set("X-Next-Page", "2")
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write(response)
+			} else {
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = w.Write([]byte("server error"))
+			}
+		}))
+		defer server.Close()
+
+		client := newTestGitlabClient(server.URL)
+		emojis, err := client.ListAwardEmojis(context.Background(), 1, 1)
+		assert.Error(t, err)
+		assert.Nil(t, emojis)
+	})
+
+	t.Run("pagination with invalid JSON on page", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte("not-json"))
+		}))
+		defer server.Close()
+
+		client := newTestGitlabClient(server.URL)
+		emojis, err := client.ListAwardEmojis(context.Background(), 1, 1)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to unmarshal page")
+		assert.Nil(t, emojis)
+	})
+
+	t.Run("pagination sends per_page=100", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			assert.Equal(t, "100", r.URL.Query().Get("per_page"))
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte("[]"))
+		}))
+		defer server.Close()
+
+		client := newTestGitlabClient(server.URL)
+		_, _ = client.ListAwardEmojis(context.Background(), 1, 1)
+	})
+
+	t.Run("pagination respects X-Next-Page value", func(t *testing.T) {
+		var requestedPages []string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			page := r.URL.Query().Get("page")
+			requestedPages = append(requestedPages, page)
+
+			switch page {
+			case "1":
+				w.Header().Set("X-Next-Page", "2")
+			case "2":
+				w.Header().Set("X-Next-Page", "3")
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte("[]"))
+		}))
+		defer server.Close()
+
+		client := newTestGitlabClient(server.URL)
+		_, err := client.ListAwardEmojis(context.Background(), 1, 1)
+		assert.NoError(t, err)
+		assert.Equal(t, []string{"1", "2", "3"}, requestedPages)
+	})
+
+	t.Run("pagination with existing query string uses & separator", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Verify the URL contains & instead of ? for pagination params
+			assert.Contains(t, r.URL.RawQuery, "existing=true&per_page=100&page=1")
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte("[]"))
+		}))
+		defer server.Close()
+
+		client := newTestGitlabClient(server.URL)
+		// Call getAll directly with a path that already has a query parameter
+		result, err := getAll[*AwardEmoji](context.Background(), client, "projects/1/merge_requests/1/award_emoji?existing=true")
+		assert.NoError(t, err)
+		assert.Empty(t, result)
+	})
+
+	t.Run("pagination safety limit prevents infinite loops", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Always return a next page, simulating API misbehavior
+			w.Header().Set("X-Next-Page", "101")
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte("[]"))
+		}))
+		defer server.Close()
+
+		client := newTestGitlabClient(server.URL)
+		emojis, err := client.ListAwardEmojis(context.Background(), 1, 1)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "pagination exceeded safety limit")
+		assert.Nil(t, emojis)
+	})
+}
+
+// Tests focusing on error behavior in the low-level doGet/get methods.
 func TestGitlabClient_Get_ErrorCases(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -178,19 +354,18 @@ func TestGitlabClient_Get_ErrorCases(t *testing.T) {
 	client := newTestGitlabClient(server.URL)
 
 	t.Run("failed to create request", func(t *testing.T) {
-		// Invalid URL
 		invalidClient := NewGitlabClient("%41:8080", "dummyToken")
-		invalidClient.Scheme = "http"
+		invalidClient.scheme = "http"
 
-		var target interface{}
-		err := invalidClient.get("test-path", &target)
+		var target any
+		err := invalidClient.get(context.Background(), "test-path", &target)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to create request")
 	})
 
 	t.Run("failed to execute request - mocked error", func(t *testing.T) {
 		clientWithMockErr := NewGitlabClient("valid-url", "dummyToken")
-		clientWithMockErr.Scheme = "http"
+		clientWithMockErr.scheme = "http"
 		clientWithMockErr.client = &http.Client{
 			Transport: &MockRoundTripper{
 				RoundTripFunc: func(req *http.Request) (*http.Response, error) {
@@ -199,8 +374,8 @@ func TestGitlabClient_Get_ErrorCases(t *testing.T) {
 			},
 		}
 
-		var target interface{}
-		err := clientWithMockErr.get("test-path", &target)
+		var target any
+		err := clientWithMockErr.get(context.Background(), "test-path", &target)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to execute request")
 	})
@@ -208,29 +383,29 @@ func TestGitlabClient_Get_ErrorCases(t *testing.T) {
 	t.Run("HTTP request failure (invalid URL)", func(t *testing.T) {
 		clientInvalidURL := NewGitlabClient("invalid-url", "dummyToken")
 
-		var target interface{}
-		err := clientInvalidURL.get("test-path", &target)
+		var target any
+		err := clientInvalidURL.get(context.Background(), "test-path", &target)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to execute request")
 	})
 
 	t.Run("non-successful status code", func(t *testing.T) {
-		var target interface{}
-		err := client.get("error-status", &target)
+		var target any
+		err := client.get(context.Background(), "error-status", &target)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "received non-200 response: 500")
 	})
 
 	t.Run("invalid JSON response", func(t *testing.T) {
-		var target interface{}
-		err := client.get("invalid-json", &target)
+		var target any
+		err := client.get(context.Background(), "invalid-json", &target)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to unmarshal response")
 	})
 
 	t.Run("failed to read response body (200 OK)", func(t *testing.T) {
 		readFailClient := NewGitlabClient("valid-url", "dummyToken")
-		readFailClient.Scheme = "http"
+		readFailClient.scheme = "http"
 		readFailClient.client = &http.Client{
 			Transport: &MockRoundTripper{
 				RoundTripFunc: func(req *http.Request) (*http.Response, error) {
@@ -242,15 +417,15 @@ func TestGitlabClient_Get_ErrorCases(t *testing.T) {
 			},
 		}
 
-		var target interface{}
-		err := readFailClient.get("test-path", &target)
+		var target any
+		err := readFailClient.get(context.Background(), "test-path", &target)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "mocked read error")
 	})
 
 	t.Run("failed to read body (non-200)", func(t *testing.T) {
 		readFailClient := NewGitlabClient("valid-url", "dummyToken")
-		readFailClient.Scheme = "http"
+		readFailClient.scheme = "http"
 		readFailClient.client = &http.Client{
 			Transport: &MockRoundTripper{
 				RoundTripFunc: func(req *http.Request) (*http.Response, error) {
@@ -263,8 +438,8 @@ func TestGitlabClient_Get_ErrorCases(t *testing.T) {
 			},
 		}
 
-		var target interface{}
-		err := readFailClient.get("test-path", &target)
+		var target any
+		err := readFailClient.get(context.Background(), "test-path", &target)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "mocked read error")
 	})
@@ -289,11 +464,11 @@ func TestGitlabClient_GetFileContent_ErrorCases(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			client := NewGitlabClient("valid-url", "dummyToken")
-			client.Scheme = "http"
+			client.scheme = "http"
 			client.client = &http.Client{
 				Transport: newMockTransport(tc.status, tc.body, tc.transportErr),
 			}
-			content, err := client.GetFileContent(123, "main", "some-file")
+			content, err := client.GetFileContent(context.Background(), 123, "main", "some-file")
 
 			assert.Error(t, err)
 			assert.Contains(t, err.Error(), tc.wantErrContains)
@@ -305,53 +480,19 @@ func TestGitlabClient_GetFileContent_ErrorCases(t *testing.T) {
 // Tests for invalid Base64 content in GetFileContent.
 func TestGitlabClient_GetFileContent_Base64DecodeFailure(t *testing.T) {
 	client := &GitlabClient{
-		Scheme:  "https",
-		BaseURL: "example.com",
-		Token:   "test-token",
+		scheme:  "https",
+		baseURL: "example.com",
+		token:   "test-token",
 		client: &http.Client{
 			Transport: newMockTransport(http.StatusOK, `{"content":"!!invalid_base64!!"}`, nil),
 		},
 	}
-	_, err := client.GetFileContent(123, "main", "file.txt")
+	_, err := client.GetFileContent(context.Background(), 123, "main", "file.txt")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to decode base64")
 }
 
-// Tests for GetMrCommits
-func TestGitlabClient_GetMrCommits(t *testing.T) {
-	server := mockGitLabServer()
-	defer server.Close()
-
-	client := newTestGitlabClient(server.URL)
-
-	t.Run("successful commits retrieval", func(t *testing.T) {
-		commits, err := client.GetMrCommits(1, 1)
-		assert.NoError(t, err)
-		assert.Len(t, commits, 2)
-		assert.Equal(t, "abc123", commits[0].ID)
-		assert.Equal(t,
-			time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC),
-			commits[0].CreatedAt)
-	})
-
-	t.Run("error on invalid project ID", func(t *testing.T) {
-		commits, err := client.GetMrCommits(-1, 1)
-		assert.Error(t, err)
-		assert.Nil(t, commits)
-	})
-
-	t.Run("error on non-existent merge request", func(t *testing.T) {
-		client := NewGitlabClient("valid-url", "dummyToken")
-		client.client = &http.Client{
-			Transport: newMockTransport(http.StatusNotFound, "not found", nil),
-		}
-		commits, err := client.GetMrCommits(1, 999)
-		assert.Error(t, err)
-		assert.Nil(t, commits)
-	})
-}
-
-// Tests for GetLatestCommitTimestamp
+// Tests for GetLatestCommitTimestamp.
 func TestGitlabClient_GetLatestCommitTimestamp(t *testing.T) {
 	server := mockGitLabServer()
 	defer server.Close()
@@ -359,10 +500,32 @@ func TestGitlabClient_GetLatestCommitTimestamp(t *testing.T) {
 	client := newTestGitlabClient(server.URL)
 
 	t.Run("successful timestamp retrieval", func(t *testing.T) {
-		timestamp, err := client.GetLatestCommitTimestamp(1, 1)
+		timestamp, err := client.GetLatestCommitTimestamp(context.Background(), 1, 1)
 		assert.NoError(t, err)
 		expectedTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
 		assert.Equal(t, expectedTime, timestamp)
+	})
+
+	t.Run("requests only the latest commit with per_page=1", func(t *testing.T) {
+		latest := time.Date(2024, 3, 2, 0, 0, 0, 0, time.UTC)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// The optimization must request a single commit rather than
+			// paginating the full history.
+			assert.Equal(t, "1", r.URL.Query().Get("per_page"))
+			commits := []*Commit{
+				{ID: "newest", CreatedAt: latest},
+				{ID: "older", CreatedAt: latest.Add(-time.Hour)},
+			}
+			response, _ := json.Marshal(commits)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(response)
+		}))
+		defer server.Close()
+
+		client := newTestGitlabClient(server.URL)
+		timestamp, err := client.GetLatestCommitTimestamp(context.Background(), 1, 1)
+		assert.NoError(t, err)
+		assert.Equal(t, latest, timestamp)
 	})
 
 	t.Run("error when no commits exist", func(t *testing.T) {
@@ -370,18 +533,18 @@ func TestGitlabClient_GetLatestCommitTimestamp(t *testing.T) {
 		emptyClient.client = &http.Client{
 			Transport: newMockTransport(http.StatusOK, "[]", nil),
 		}
-		_, err := emptyClient.GetLatestCommitTimestamp(1, 1)
+		_, err := emptyClient.GetLatestCommitTimestamp(context.Background(), 1, 1)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "no commits found")
 	})
 
-	t.Run("error propagation from GetMrCommits", func(t *testing.T) {
+	t.Run("error propagation from API", func(t *testing.T) {
 		errorClient := NewGitlabClient("valid-url", "dummyToken")
 		errorClient.client = &http.Client{
 			Transport: newMockTransport(http.StatusInternalServerError,
 				"server error", nil),
 		}
-		_, err := errorClient.GetLatestCommitTimestamp(1, 1)
+		_, err := errorClient.GetLatestCommitTimestamp(context.Background(), 1, 1)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "500")
 	})
@@ -392,59 +555,41 @@ func TestGitlabClient_GetLatestCommitTimestamp(t *testing.T) {
 			Transport: newMockTransport(http.StatusOK,
 				`[{"id":"123","created_at":"invalid-time"}]`, nil),
 		}
-		_, err := badTimeClient.GetLatestCommitTimestamp(1, 1)
+		_, err := badTimeClient.GetLatestCommitTimestamp(context.Background(), 1, 1)
 		assert.Error(t, err)
 	})
 }
 
+// TestGitlabClient_Get_BodyCloseErrorLogging verifies that body close errors are logged via slog.
 func TestGitlabClient_Get_BodyCloseErrorLogging(t *testing.T) {
-	// Create a mock HTTP client with a faulty response body
 	mockTransport := &MockRoundTripper{
 		RoundTripFunc: func(req *http.Request) (*http.Response, error) {
 			return &http.Response{
 				StatusCode: http.StatusOK,
 				Body: &FaultyReadCloser{
-					FailRead:  false, // No issue while reading
-					FailClose: true,  // Fails on Close
+					FailRead:  false,
+					FailClose: true,
 				},
 				Header: make(http.Header),
 			}, nil
 		},
 	}
 
-	// Capture os.Stdout output by redirecting it temporarily
-	r, w, _ := os.Pipe()
-	stdout := os.Stdout
-	os.Stdout = w
+	// Capture slog output via a custom handler.
+	var logBuf bytes.Buffer
+	handler := slog.NewTextHandler(&logBuf, nil)
+	original := slog.Default()
+	slog.SetDefault(slog.New(handler))
+	defer slog.SetDefault(original)
 
-	var outputCaptured string
-	done := make(chan bool)
-	go func() {
-		var buf bytes.Buffer
-		_, err := io.Copy(&buf, r)
-		if err != nil {
-			t.Error("failed to read from pipe:", err)
-		}
-		outputCaptured = buf.String()
-		done <- true
-	}()
-
-	// Initialize the GitLab client using the mock transport
 	client := NewGitlabClient("valid-url", "dummyToken")
-	client.Scheme = "http"
+	client.scheme = "http"
 	client.client = &http.Client{Transport: mockTransport}
 
-	var target map[string]interface{}
-	err := client.get("test-path", &target)
+	var target map[string]any
+	err := client.get(context.Background(), "test-path", &target)
 
-	_ = w.Close()
-	os.Stdout = stdout
-	<-done
-
-	// Assertions to validate behavior
 	assert.NoError(t, err, "The main operation should succeed despite the close error")
-
-	// Validate the captured log output
-	assert.Contains(t, outputCaptured, "failed to close response body:", "Log should contain the message about closing failure")
-	assert.Contains(t, outputCaptured, "mocked close error", "Log should include the specific close error")
+	assert.Contains(t, logBuf.String(), "Failed to close response body", "Log should contain the close failure message")
+	assert.Contains(t, logBuf.String(), "mocked close error", "Log should include the specific close error")
 }

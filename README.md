@@ -132,3 +132,13 @@ workflows:
 ## Contributing
 
 Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
+
+### Development
+
+This project uses a [Nix flake](flake.nix) for the development environment and [Task](https://taskfile.dev) for automation:
+
+```sh
+nix develop     # enter a shell with Go and all required tooling
+task --list     # list available tasks
+task test       # generate mocks and run the test suite
+```

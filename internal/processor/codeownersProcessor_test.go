@@ -168,6 +168,23 @@ func TestCheckApproval(t *testing.T) {
 			config:       baseCfg,
 			wantApproved: true,
 		},
+		{
+			name:         "CRITICAL: Leading slash in pattern is stripped for matching",
+			codeowners:   strings.NewReader("/project/staging/* @approver"),
+			reaction:     approvingUser,
+			config:       baseCfg,
+			wantApproved: true,
+		},
+		{
+			name: "CRITICAL: Leading slash pattern with last-match-wins",
+			codeowners: strings.NewReader(`
+				* @generic_admin
+				/project/staging/* @approver
+			`),
+			reaction:     approvingUser,
+			config:       baseCfg,
+			wantApproved: true,
+		},
 	}
 
 	for _, tc := range testCases {

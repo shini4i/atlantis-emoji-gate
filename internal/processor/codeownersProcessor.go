@@ -11,6 +11,8 @@ import (
 	"github.com/shini4i/atlantis-emoji-gate/internal/config"
 )
 
+//go:generate go tool mockgen -destination=mocks/mock_processor.go -package=mocks . Processor
+
 // Processor defines the contract for checking approvals against a CODEOWNERS file.
 type Processor interface {
 	CheckApproval(codeowners io.Reader, reaction *client.AwardEmoji, cfg config.GitlabConfig) (bool, error)
@@ -24,9 +26,11 @@ func NewProcessor() Processor {
 	return &approvalProcessor{}
 }
 
-// isPathMatch is a helper to check if a path matches a CODEOWNERS pattern.
-// This reduces the complexity of the main CheckApproval function.
+// isPathMatch checks if a path matches a CODEOWNERS pattern.
+// Leading slashes are stripped from the pattern to normalize matching, since
+// Atlantis provides REPO_REL_DIR without a leading slash.
 func isPathMatch(pattern, path string) (bool, error) {
+	pattern = strings.TrimPrefix(pattern, "/")
 	if pattern == "*" {
 		return true, nil
 	}
