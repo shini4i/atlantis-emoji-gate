@@ -24,12 +24,11 @@ const (
 //go:generate go tool mockgen -destination=mocks/mock_client.go -package=mocks . GitlabClientInterface
 
 // GitlabClientInterface defines the methods that must be implemented by a GitLab client.
-// GetMrCommits is intentionally excluded as it is only used internally by GetLatestCommitTimestamp.
 type GitlabClientInterface interface {
 	GetProject(ctx context.Context, projectPath string) (*Project, error)
 	ListAwardEmojis(ctx context.Context, projectID, mrID int) ([]*AwardEmoji, error)
 	GetFileContent(ctx context.Context, projectID int, branch, filePath string) (string, error)
-	GetLatestCommitTimestamp(ctx context.Context, projectID, mrID int) (time.Time, error)
+	GetLatestPushTimestamp(ctx context.Context, projectID, mrID int) (time.Time, error)
 }
 
 // GitlabClient implements GitlabClientInterface using the GitLab REST API.
@@ -58,9 +57,11 @@ type User struct {
 	Username string `json:"username"`
 }
 
-// Commit represents a GitLab commit.
-type Commit struct {
-	ID        string    `json:"id"`
+// DiffVersion represents one diff version of a GitLab merge request. GitLab
+// records a new version each time the source branch is pushed; CreatedAt is set
+// server-side at that moment.
+type DiffVersion struct {
+	ID        int       `json:"id"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -193,18 +194,28 @@ func (g *GitlabClient) GetFileContent(ctx context.Context, projectID int, branch
 	return string(decodedContent), nil
 }
 
-// GetLatestCommitTimestamp retrieves the creation timestamp of the most recent
-// commit in the specified merge request. GitLab returns merge request commits in
-// reverse chronological order, so only the first commit of the first page is
-// requested rather than paginating through the entire commit history.
-func (g *GitlabClient) GetLatestCommitTimestamp(ctx context.Context, projectID, mrID int) (time.Time, error) {
-	var commits []*Commit
-	path := fmt.Sprintf("projects/%d/merge_requests/%d/commits?per_page=1", projectID, mrID)
-	if err := g.get(ctx, path, &commits); err != nil {
+// GetLatestPushTimestamp returns when GitLab recorded the newest diff version of the
+// merge request, i.e. the last push to its source branch. Commit timestamps are not
+// used: a commit's created_at is the git committer date, which the pusher can backdate.
+func (g *GitlabClient) GetLatestPushTimestamp(ctx context.Context, projectID, mrID int) (time.Time, error) {
+	path := fmt.Sprintf("projects/%d/merge_requests/%d/versions", projectID, mrID)
+	versions, err := getAll[DiffVersion](ctx, g, path)
+	if err != nil {
 		return time.Time{}, err
 	}
-	if len(commits) == 0 {
-		return time.Time{}, fmt.Errorf("no commits found for MR %d", mrID)
+	if len(versions) == 0 {
+		return time.Time{}, fmt.Errorf("no diff versions found for MR %d", mrID)
 	}
-	return commits[0].CreatedAt, nil
+
+	latest := versions[0]
+	for _, v := range versions[1:] {
+		if v.ID > latest.ID {
+			latest = v
+		}
+	}
+	// A zero time would pass every approval as current; fail closed instead.
+	if latest.CreatedAt.IsZero() {
+		return time.Time{}, fmt.Errorf("diff version %d for MR %d has no created_at timestamp", latest.ID, mrID)
+	}
+	return latest.CreatedAt, nil
 }

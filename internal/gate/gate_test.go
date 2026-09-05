@@ -127,14 +127,14 @@ func TestCheckMandatoryApproval(t *testing.T) {
 		mc := clientmocks.NewMockGitlabClientInterface(ctrl)
 		mp := procmocks.NewMockProcessor(ctrl)
 		cfg := config.GitlabConfig{PullRequestID: 123, Restricted: true}
-		commitTime := time.Now()
-		reactionNew := &client.AwardEmoji{User: client.User{Username: "approver"}, UpdatedAt: commitTime.Add(time.Hour)}
+		pushTime := time.Date(2024, 1, 2, 12, 0, 0, 0, time.UTC)
+		reactionNew := &client.AwardEmoji{User: client.User{Username: "approver"}, UpdatedAt: pushTime.Add(time.Hour)}
 
 		mc.EXPECT().ListAwardEmojis(ctx, 1, 123).Return([]*client.AwardEmoji{
-			{User: client.User{Username: "approver"}, UpdatedAt: commitTime.Add(-time.Hour)},
+			{User: client.User{Username: "approver"}, UpdatedAt: pushTime.Add(-time.Hour)},
 			reactionNew,
 		}, nil)
-		mc.EXPECT().GetLatestCommitTimestamp(ctx, 1, 123).Return(commitTime, nil)
+		mc.EXPECT().GetLatestPushTimestamp(ctx, 1, 123).Return(pushTime, nil)
 
 		// Only the new reaction should reach the processor.
 		mp.EXPECT().CheckApproval(gomock.Any(), reactionNew, cfg).Return(true, nil)
@@ -143,6 +143,32 @@ func TestCheckMandatoryApproval(t *testing.T) {
 		assert.NoError(t, err)
 		assert.True(t, approved)
 		assert.Contains(t, logBuf.String(), "Skipping outdated approval")
+	})
+
+	t.Run("Restricted mode denies when every approval predates the last push", func(t *testing.T) {
+		logBuf, cleanup := captureLogs(t)
+		defer cleanup()
+
+		ctrl := gomock.NewController(t)
+
+		mc := clientmocks.NewMockGitlabClientInterface(ctrl)
+		// No CheckApproval expectation: a stale reaction reaching the processor
+		// fails the test via gomock's unexpected-call check.
+		mp := procmocks.NewMockProcessor(ctrl)
+		cfg := config.GitlabConfig{PullRequestID: 123, Restricted: true}
+		pushTime := time.Date(2024, 1, 2, 12, 0, 0, 0, time.UTC)
+
+		mc.EXPECT().ListAwardEmojis(ctx, 1, 123).Return([]*client.AwardEmoji{
+			{User: client.User{Username: "approver"}, UpdatedAt: pushTime.Add(-2 * time.Hour)},
+			{User: client.User{Username: "other-approver"}, UpdatedAt: pushTime.Add(-time.Minute)},
+		}, nil)
+		mc.EXPECT().GetLatestPushTimestamp(ctx, 1, 123).Return(pushTime, nil)
+
+		approved, err := CheckMandatoryApproval(ctx, mc, cfg, 1, "content", mp)
+		assert.NoError(t, err)
+		assert.False(t, approved)
+		assert.Contains(t, logBuf.String(), "Skipping outdated approval")
+		assert.Contains(t, logBuf.String(), "Mandatory approval not found")
 	})
 
 	t.Run("Empty reactions returns early", func(t *testing.T) {
@@ -171,7 +197,7 @@ func TestCheckMandatoryApproval(t *testing.T) {
 		assert.Contains(t, err.Error(), "failed to fetch reactions")
 	})
 
-	t.Run("Error on GetLatestCommitTimestamp", func(t *testing.T) {
+	t.Run("Error on GetLatestPushTimestamp", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 
 		mc := clientmocks.NewMockGitlabClientInterface(ctrl)
@@ -179,11 +205,11 @@ func TestCheckMandatoryApproval(t *testing.T) {
 		reaction := &client.AwardEmoji{User: client.User{Username: "approver"}}
 
 		mc.EXPECT().ListAwardEmojis(ctx, 1, 0).Return([]*client.AwardEmoji{reaction}, nil)
-		mc.EXPECT().GetLatestCommitTimestamp(ctx, 1, 0).Return(time.Time{}, errors.New("commit error"))
+		mc.EXPECT().GetLatestPushTimestamp(ctx, 1, 0).Return(time.Time{}, errors.New("versions error"))
 
 		_, err := CheckMandatoryApproval(ctx, mc, cfg, 1, "", procmocks.NewMockProcessor(ctrl))
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to fetch latest commit timestamp")
+		assert.Contains(t, err.Error(), "failed to fetch latest push timestamp")
 	})
 
 	t.Run("Error on CheckApproval propagates", func(t *testing.T) {
