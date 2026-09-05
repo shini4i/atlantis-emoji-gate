@@ -44,6 +44,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - `RESTRICTED` mode now measures approval freshness against the merge request's latest diff version, a push time recorded by GitLab itself. It previously used the newest commit's timestamp, which is the git committer date and could be backdated by the merge request author to make a stale approval pass.
-- Wired gosec and govulncheck into local automation; gosec runs in CI.
+- Wired gosec and govulncheck into local automation and CI.
 
 [Unreleased]: https://github.com/shini4i/atlantis-emoji-gate/compare/v0.4.0...HEAD
