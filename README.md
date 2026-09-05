@@ -73,15 +73,15 @@ docker pull ghcr.io/shini4i/atlantis:v0.32.0
 
 ## Configuration
 
-`atlantis-emoji-gate` is configured using environment variables. The following variables are available:
+`atlantis-emoji-gate` is configured using environment variables. All of the following are optional:
 
-| Variable          | Description                                                                        | Default      | Optional |
-|-------------------|------------------------------------------------------------------------------------|--------------|----------|
-| `APPROVE_EMOJI`   | The emoji that must be present on the MR for `atlantis apply` to be allowed to run | `thumbsup`   | No       |
-| `CODEOWNERS_PATH` | The path to the CODEOWNERS file in the repository                                  | `CODEOWNERS` | No       |
-| `CODEOWNERS_REPO` | The repository to check for CODEOWNERS file                                        |              | Yes      |
-| `INSECURE`        | If MR author is allowed to approve their own MR                                    | `false`      | No       |
-| `RESTRICTED`      | A feature toggle that will enforce emoji timestamp validation                      | `false`      | No       |
+| Variable          | Description                                                                              | Default      |
+|-------------------|------------------------------------------------------------------------------------------|--------------|
+| `APPROVE_EMOJI`   | The emoji that must be present on the MR for `atlantis apply` to be allowed to run       | `thumbsup`   |
+| `CODEOWNERS_PATH` | The path to the CODEOWNERS file in the repository                                        | `CODEOWNERS` |
+| `CODEOWNERS_REPO` | A separate `group/project` to read the CODEOWNERS file from instead of the MR's project  |              |
+| `INSECURE`        | If MR author is allowed to approve their own MR                                          | `false`      |
+| `RESTRICTED`      | Only count approvals given after the latest push to the MR                               | `false`      |
 
 The remaining environment variables are set dynamically by Atlantis and should not be set manually.
 
@@ -103,16 +103,16 @@ CODEOWNERS file example:
 
 ```
 * @username1
-/terraform @username4
-/terraform/provision @username2
-/terraform/deploy @username3
+/terraform/* @username4
+/terraform/provision @username2 @username4
 ```
 
-Where:
-- `@username1` would be able to approve any MR
-- `@username2` would be able to approve MRs that change files in the `/terraform/provision` directory
-- `@username3` would be able to approve MRs that change files in the `/terraform/deploy` directory
-- `@username4` would be able to approve MRs that change files in both `/terraform/provision` and `/terraform/deploy` directories
+Rules are evaluated top to bottom against the Atlantis project directory (`REPO_REL_DIR`, e.g. `terraform/deploy`) and **the last matching rule wins**. With the file above:
+- `@username2` and `@username4` can approve MRs in `terraform/provision`
+- `@username4` can approve MRs in `terraform/deploy` (and in any other direct subdirectory of `terraform`)
+- `@username1` can approve MRs in any directory that no later rule matches; `*` is a fallback, not a superuser
+
+Patterns use Go's [`filepath.Match`](https://pkg.go.dev/path/filepath#Match) syntax. A leading `/` is ignored. `*` on its own matches every directory, but inside a pattern it does not cross `/`: `terraform/*` matches `terraform/deploy` and not `terraform/deploy/prod`. A bare path such as `terraform` matches only that exact directory, not the ones below it.
 
 ### Workflow example
 

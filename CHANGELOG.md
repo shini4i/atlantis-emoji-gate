@@ -13,7 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Structured logging via `log/slog` for all application output.
 - `context.Context` propagation through every GitLab client method down to the HTTP requests.
 - 30-second default timeout on the GitLab HTTP client to avoid indefinite hangs.
-- Pagination for GitLab list endpoints (award emojis), with a safety limit to guard against runaway loops.
+- A 2-minute deadline on the whole run, so a stalled GitLab API cannot hang the Atlantis apply step.
+- Pagination for GitLab list endpoints, capped at 100 requests per call and rejecting malformed `X-Next-Page` headers, so a misbehaving API cannot loop forever.
 - Nix flake (`flake.nix`, `flake.lock`) for a reproducible development environment.
 - `Taskfile.yml` for local automation (codegen, lint, security, test, build).
 - golangci-lint configuration (`.golangci.yml`) with `revive` and `misspell`.

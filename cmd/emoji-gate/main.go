@@ -4,12 +4,17 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"time"
 
 	"github.com/shini4i/atlantis-emoji-gate/internal/client"
 	"github.com/shini4i/atlantis-emoji-gate/internal/config"
 	"github.com/shini4i/atlantis-emoji-gate/internal/gate"
 	"github.com/shini4i/atlantis-emoji-gate/internal/processor"
 )
+
+// runTimeout bounds the whole gate run so a stalled GitLab API cannot hang the
+// Atlantis apply step indefinitely.
+const runTimeout = 2 * time.Minute
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
@@ -20,9 +25,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
 	gitlabClient := client.NewGitlabClient(cfg.URL, cfg.Token)
 	proc := processor.NewProcessor()
 
-	os.Exit(gate.Run(ctx, gitlabClient, cfg, proc))
+	exitCode := gate.Run(ctx, gitlabClient, cfg, proc)
+	cancel()
+	os.Exit(exitCode)
 }

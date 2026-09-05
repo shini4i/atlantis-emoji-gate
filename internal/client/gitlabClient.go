@@ -19,6 +19,8 @@ const (
 	defaultTimeout = 30 * time.Second
 	// maxPerPage is the maximum number of items per page for paginated GitLab API requests.
 	maxPerPage = 100
+	// maxPages caps the requests one paginated call may make (10,000 items at maxPerPage).
+	maxPages = 100
 )
 
 //go:generate go tool mockgen -destination=mocks/mock_client.go -package=mocks . GitlabClientInterface
@@ -124,19 +126,21 @@ func (g *GitlabClient) get(ctx context.Context, path string, target any) error {
 }
 
 // getAll sends paginated GET requests and collects all array results across pages.
-// It appends per_page and page query parameters to the base path automatically.
-// The next page number is read from GitLab's X-Next-Page response header.
-// A safety limit prevents unbounded loops in case of API misbehavior.
+// It appends per_page and page query parameters to the base path automatically and
+// follows GitLab's X-Next-Page header. It fails after maxPages requests or on a
+// non-numeric X-Next-Page value, so a misbehaving server cannot make it loop forever.
 func getAll[T any](ctx context.Context, g *GitlabClient, basePath string) ([]T, error) {
-	const maxPages = 100 // Safety limit: 100 pages * 100 items = 10,000 items max
-
 	var all []T
 	separator := "?"
 	if strings.Contains(basePath, "?") {
 		separator = "&"
 	}
 
-	for page := "1"; page != ""; {
+	for page, requests := "1", 0; page != ""; requests++ {
+		if requests == maxPages {
+			return nil, fmt.Errorf("pagination exceeded safety limit of %d pages", maxPages)
+		}
+
 		path := fmt.Sprintf("%s%sper_page=%d&page=%s", basePath, separator, maxPerPage, page)
 		body, headers, err := g.doGet(ctx, path)
 		if err != nil {
@@ -150,11 +154,10 @@ func getAll[T any](ctx context.Context, g *GitlabClient, basePath string) ([]T, 
 
 		all = append(all, pageItems...)
 
-		page = headers.Get("X-Next-Page")
+		page = headers.Get("X-Next-Page") // empty on the last page
 		if page != "" {
-			pageNum, _ := strconv.Atoi(page)
-			if pageNum > maxPages {
-				return nil, fmt.Errorf("pagination exceeded safety limit of %d pages", maxPages)
+			if _, err := strconv.Atoi(page); err != nil {
+				return nil, fmt.Errorf("invalid X-Next-Page header %q", page)
 			}
 		}
 	}
