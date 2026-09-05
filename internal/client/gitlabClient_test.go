@@ -106,18 +106,15 @@ func mockGitLabServer() *httptest.Server {
 		_, _ = w.Write(response)
 	})
 
-	mux.HandleFunc("/api/v4/projects/1/merge_requests/1/commits", func(w http.ResponseWriter, r *http.Request) {
-		commits := []*Commit{
-			{
-				ID:        "abc123",
-				CreatedAt: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC),
-			},
-			{
-				ID:        "def456",
-				CreatedAt: time.Date(2024, 1, 1, 11, 0, 0, 0, time.UTC),
-			},
+	mux.HandleFunc("/api/v4/projects/1/merge_requests/1/versions", func(w http.ResponseWriter, r *http.Request) {
+		versions := []DiffVersion{
+			{ID: 108, CreatedAt: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)},
+			{ID: 110, CreatedAt: time.Date(2024, 1, 2, 12, 0, 0, 0, time.UTC)},
 		}
-		_ = json.NewEncoder(w).Encode(commits)
+		response, _ := json.Marshal(versions)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(response)
 	})
 
 	return httptest.NewServer(mux)
@@ -492,50 +489,88 @@ func TestGitlabClient_GetFileContent_Base64DecodeFailure(t *testing.T) {
 	assert.Contains(t, err.Error(), "failed to decode base64")
 }
 
-// Tests for GetLatestCommitTimestamp.
-func TestGitlabClient_GetLatestCommitTimestamp(t *testing.T) {
+// Tests for GetLatestPushTimestamp.
+func TestGitlabClient_GetLatestPushTimestamp(t *testing.T) {
 	server := mockGitLabServer()
 	defer server.Close()
 
 	client := newTestGitlabClient(server.URL)
 
-	t.Run("successful timestamp retrieval", func(t *testing.T) {
-		timestamp, err := client.GetLatestCommitTimestamp(context.Background(), 1, 1)
+	t.Run("returns the created_at of the highest version id", func(t *testing.T) {
+		// mockGitLabServer lists the newest version second, so a naive
+		// "first element" implementation would return the wrong timestamp.
+		timestamp, err := client.GetLatestPushTimestamp(context.Background(), 1, 1)
 		assert.NoError(t, err)
-		expectedTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
-		assert.Equal(t, expectedTime, timestamp)
+		assert.Equal(t, time.Date(2024, 1, 2, 12, 0, 0, 0, time.UTC), timestamp)
 	})
 
-	t.Run("requests only the latest commit with per_page=1", func(t *testing.T) {
-		latest := time.Date(2024, 3, 2, 0, 0, 0, 0, time.UTC)
+	t.Run("reads the diff versions endpoint, never the commits endpoint", func(t *testing.T) {
+		// Commit created_at mirrors the git committer date and can be backdated
+		// by the pusher; diff version created_at is a GitLab-side record.
+		var requested []string
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// The optimization must request a single commit rather than
-			// paginating the full history.
-			assert.Equal(t, "1", r.URL.Query().Get("per_page"))
-			commits := []*Commit{
-				{ID: "newest", CreatedAt: latest},
-				{ID: "older", CreatedAt: latest.Add(-time.Hour)},
-			}
-			response, _ := json.Marshal(commits)
+			requested = append(requested, r.URL.Path)
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write(response)
+			_, _ = w.Write([]byte(`[{"id":7,"created_at":"2024-05-01T10:00:00Z"}]`))
 		}))
 		defer server.Close()
 
 		client := newTestGitlabClient(server.URL)
-		timestamp, err := client.GetLatestCommitTimestamp(context.Background(), 1, 1)
+		_, err := client.GetLatestPushTimestamp(context.Background(), 42, 9)
 		assert.NoError(t, err)
-		assert.Equal(t, latest, timestamp)
+		assert.Equal(t, []string{"/api/v4/projects/42/merge_requests/9/versions"}, requested)
 	})
 
-	t.Run("error when no commits exist", func(t *testing.T) {
+	t.Run("selects by highest id, not by position", func(t *testing.T) {
+		// GitLab lists versions newest-first; a positional pick of the last
+		// element would return the OLDEST push and re-open the bypass.
+		newest := time.Date(2024, 3, 3, 0, 0, 0, 0, time.UTC)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`[
+				{"id":109,"created_at":"2024-03-01T00:00:00Z"},
+				{"id":111,"created_at":"2024-03-03T00:00:00Z"},
+				{"id":110,"created_at":"2024-03-02T00:00:00Z"}
+			]`))
+		}))
+		defer server.Close()
+
+		client := newTestGitlabClient(server.URL)
+		timestamp, err := client.GetLatestPushTimestamp(context.Background(), 1, 1)
+		assert.NoError(t, err)
+		assert.Equal(t, newest, timestamp)
+	})
+
+	t.Run("scans every page so the newest version is found regardless of ordering", func(t *testing.T) {
+		newest := time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			switch r.URL.Query().Get("page") {
+			case "1":
+				w.Header().Set("X-Next-Page", "2")
+				_, _ = w.Write([]byte(`[{"id":1,"created_at":"2024-01-01T00:00:00Z"}]`))
+			case "2":
+				_, _ = w.Write([]byte(`[{"id":2,"created_at":"2024-06-01T00:00:00Z"}]`))
+			default:
+				t.Errorf("unexpected page %q", r.URL.Query().Get("page"))
+			}
+		}))
+		defer server.Close()
+
+		client := newTestGitlabClient(server.URL)
+		timestamp, err := client.GetLatestPushTimestamp(context.Background(), 1, 1)
+		assert.NoError(t, err)
+		assert.Equal(t, newest, timestamp)
+	})
+
+	t.Run("error when no versions exist", func(t *testing.T) {
 		emptyClient := NewGitlabClient("valid-url", "dummyToken")
 		emptyClient.client = &http.Client{
 			Transport: newMockTransport(http.StatusOK, "[]", nil),
 		}
-		_, err := emptyClient.GetLatestCommitTimestamp(context.Background(), 1, 1)
+		_, err := emptyClient.GetLatestPushTimestamp(context.Background(), 1, 1)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "no commits found")
+		assert.Contains(t, err.Error(), "no diff versions found")
 	})
 
 	t.Run("error propagation from API", func(t *testing.T) {
@@ -544,19 +579,36 @@ func TestGitlabClient_GetLatestCommitTimestamp(t *testing.T) {
 			Transport: newMockTransport(http.StatusInternalServerError,
 				"server error", nil),
 		}
-		_, err := errorClient.GetLatestCommitTimestamp(context.Background(), 1, 1)
+		_, err := errorClient.GetLatestPushTimestamp(context.Background(), 1, 1)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "500")
 	})
 
-	t.Run("malformed commit timestamp", func(t *testing.T) {
+	t.Run("error when the newest version has no created_at", func(t *testing.T) {
+		// A zero timestamp would make every approval look current, so it must
+		// be rejected rather than returned.
+		// The older version carries a valid timestamp; the guard must inspect
+		// the selected newest version, not fall back to an older one.
+		noTimeClient := NewGitlabClient("valid-url", "dummyToken")
+		noTimeClient.client = &http.Client{
+			Transport: newMockTransport(http.StatusOK,
+				`[{"id":4,"created_at":"2024-01-01T00:00:00Z"},{"id":9}]`, nil),
+		}
+		_, err := noTimeClient.GetLatestPushTimestamp(context.Background(), 1, 1)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "diff version 9")
+		assert.Contains(t, err.Error(), "has no created_at")
+	})
+
+	t.Run("malformed version timestamp", func(t *testing.T) {
 		badTimeClient := NewGitlabClient("valid-url", "dummyToken")
 		badTimeClient.client = &http.Client{
 			Transport: newMockTransport(http.StatusOK,
-				`[{"id":"123","created_at":"invalid-time"}]`, nil),
+				`[{"id":1,"created_at":"invalid-time"}]`, nil),
 		}
-		_, err := badTimeClient.GetLatestCommitTimestamp(context.Background(), 1, 1)
+		_, err := badTimeClient.GetLatestPushTimestamp(context.Background(), 1, 1)
 		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to unmarshal")
 	})
 }
 

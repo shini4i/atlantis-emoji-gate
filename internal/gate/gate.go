@@ -28,7 +28,8 @@ func fetchCodeOwnersContent(ctx context.Context, gc client.GitlabClientInterface
 
 // CheckMandatoryApproval validates that a merge request has received an
 // approval emoji from a user listed in the CODEOWNERS file.
-// In restricted mode, only approvals made after the latest commit are considered.
+// In restricted mode, only approvals made after the latest push to the merge
+// request are considered.
 func CheckMandatoryApproval(ctx context.Context, gc client.GitlabClientInterface, cfg config.GitlabConfig, projectID int, codeOwnersContent string, proc processor.Processor) (bool, error) {
 	reactions, err := gc.ListAwardEmojis(ctx, projectID, cfg.PullRequestID)
 	if err != nil {
@@ -40,16 +41,16 @@ func CheckMandatoryApproval(ctx context.Context, gc client.GitlabClientInterface
 		return false, nil
 	}
 
-	var lastCommitTimestamp time.Time
+	var lastPushTimestamp time.Time
 	if cfg.Restricted {
-		lastCommitTimestamp, err = gc.GetLatestCommitTimestamp(ctx, projectID, cfg.PullRequestID)
+		lastPushTimestamp, err = gc.GetLatestPushTimestamp(ctx, projectID, cfg.PullRequestID)
 		if err != nil {
-			return false, fmt.Errorf("failed to fetch latest commit timestamp: %w", err)
+			return false, fmt.Errorf("failed to fetch latest push timestamp: %w", err)
 		}
 	}
 
 	for _, reaction := range reactions {
-		if cfg.Restricted && reaction.UpdatedAt.Before(lastCommitTimestamp) {
+		if cfg.Restricted && reaction.UpdatedAt.Before(lastPushTimestamp) {
 			slog.Info("Skipping outdated approval", "user", reaction.User.Username, "updated_at", reaction.UpdatedAt)
 			continue
 		}
