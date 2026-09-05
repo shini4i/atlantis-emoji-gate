@@ -39,11 +39,6 @@ jobs:
         with:
           version: v2.13.2
 
-      - name: Install security scanners
-        run: |
-          go install github.com/securego/gosec/v2/cmd/gosec@v2.29.0
-          go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
-
       - name: Run security scanners
         run: task security
 
