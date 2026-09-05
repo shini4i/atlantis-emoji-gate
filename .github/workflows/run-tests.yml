@@ -39,8 +39,10 @@ jobs:
         with:
           version: v2.13.2
 
-      - name: Run security scanners
-        run: task security
+      - name: Run Gosec Security Scanner
+        uses: securego/gosec@deb54465fea23d19a77f037e11e6589021f8501d # v2.29.0
+        with:
+          args: ./...
 
       - name: Run tests with coverage
         run: task test-coverage
