@@ -315,10 +315,13 @@ func TestGitlabClient_Pagination(t *testing.T) {
 		assert.Empty(t, result)
 	})
 
-	t.Run("pagination safety limit prevents infinite loops", func(t *testing.T) {
+	t.Run("pagination safety limit bounds the number of requests", func(t *testing.T) {
+		// A server that always points at the same next page must be cut off
+		// by the iteration count, not by the page number it advertises.
+		var calls int
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Always return a next page, simulating API misbehavior
-			w.Header().Set("X-Next-Page", "101")
+			calls++
+			w.Header().Set("X-Next-Page", "2")
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte("[]"))
 		}))
@@ -329,7 +332,83 @@ func TestGitlabClient_Pagination(t *testing.T) {
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "pagination exceeded safety limit")
 		assert.Nil(t, emojis)
+		assert.Equal(t, maxPages, calls)
 	})
+
+	t.Run("a fetch spanning exactly maxPages pages succeeds", func(t *testing.T) {
+		var calls int
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			calls++
+			page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+			if page < maxPages {
+				w.Header().Set("X-Next-Page", strconv.Itoa(page+1))
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(w, `[{"name":"thumbsup","user":{"username":"user%d"}}]`, page)
+		}))
+		defer server.Close()
+
+		client := newTestGitlabClient(server.URL)
+		emojis, err := client.ListAwardEmojis(context.Background(), 1, 1)
+		assert.NoError(t, err)
+		assert.Len(t, emojis, maxPages)
+		assert.Equal(t, maxPages, calls)
+	})
+
+	t.Run("a cancelled context aborts before any request is sent", func(t *testing.T) {
+		// main.go relies on this to bound the whole run with one deadline.
+		var calls int
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			calls++
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte("[]"))
+		}))
+		defer server.Close()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		client := newTestGitlabClient(server.URL)
+		emojis, err := client.ListAwardEmojis(ctx, 1, 1)
+		assert.ErrorIs(t, err, context.Canceled)
+		assert.Nil(t, emojis)
+		assert.Equal(t, 0, calls)
+	})
+
+	t.Run("an expired deadline interrupts a stalled request", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			<-r.Context().Done() // stall until the client gives up
+		}))
+		defer server.Close()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+		defer cancel()
+
+		client := newTestGitlabClient(server.URL)
+		emojis, err := client.ListAwardEmojis(ctx, 1, 1)
+		assert.ErrorIs(t, err, context.DeadlineExceeded)
+		assert.Nil(t, emojis)
+	})
+
+	for _, bad := range []string{"not-a-number", "0", "-1"} {
+		t.Run("malformed X-Next-Page "+bad+" is an error, not another request", func(t *testing.T) {
+			var calls int
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				w.Header().Set("X-Next-Page", bad)
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte("[]"))
+			}))
+			defer server.Close()
+
+			client := newTestGitlabClient(server.URL)
+			emojis, err := client.ListAwardEmojis(context.Background(), 1, 1)
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), fmt.Sprintf("invalid X-Next-Page header %q", bad))
+			assert.Nil(t, emojis)
+			assert.Equal(t, 1, calls)
+		})
+	}
 }
 
 // Tests focusing on error behavior in the low-level doGet/get methods.

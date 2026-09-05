@@ -102,6 +102,24 @@ func TestCheckApproval(t *testing.T) {
 			wantApproved: true,
 		},
 		{
+			name:       "Failure: * in a pattern does not cross a path separator",
+			codeowners: strings.NewReader("project/staging/* @approver"),
+			reaction:   approvingUser,
+			config: func() config.GitlabConfig {
+				c := baseCfg
+				c.TerraformPath = "project/staging/app/prod"
+				return c
+			}(),
+			wantApproved: false,
+		},
+		{
+			name:         "Failure: A bare directory pattern matches only itself, not its descendants",
+			codeowners:   strings.NewReader("project @approver"),
+			reaction:     approvingUser,
+			config:       baseCfg, // TerraformPath is 'project/staging/app'
+			wantApproved: false,
+		},
+		{
 			name:         "Failure: Path does not match any rule",
 			codeowners:   strings.NewReader("project/production/* @approver"),
 			reaction:     approvingUser,
