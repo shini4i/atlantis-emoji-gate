@@ -375,23 +375,40 @@ func TestGitlabClient_Pagination(t *testing.T) {
 		assert.Equal(t, 0, calls)
 	})
 
-	t.Run("non-numeric X-Next-Page is an error, not another request", func(t *testing.T) {
-		var calls int
+	t.Run("an expired deadline interrupts a stalled request", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			calls++
-			w.Header().Set("X-Next-Page", "not-a-number")
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte("[]"))
+			<-r.Context().Done() // stall until the client gives up
 		}))
 		defer server.Close()
 
+		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+		defer cancel()
+
 		client := newTestGitlabClient(server.URL)
-		emojis, err := client.ListAwardEmojis(context.Background(), 1, 1)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), `invalid X-Next-Page header "not-a-number"`)
+		emojis, err := client.ListAwardEmojis(ctx, 1, 1)
+		assert.ErrorIs(t, err, context.DeadlineExceeded)
 		assert.Nil(t, emojis)
-		assert.Equal(t, 1, calls)
 	})
+
+	for _, bad := range []string{"not-a-number", "0", "-1"} {
+		t.Run("malformed X-Next-Page "+bad+" is an error, not another request", func(t *testing.T) {
+			var calls int
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				w.Header().Set("X-Next-Page", bad)
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte("[]"))
+			}))
+			defer server.Close()
+
+			client := newTestGitlabClient(server.URL)
+			emojis, err := client.ListAwardEmojis(context.Background(), 1, 1)
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), fmt.Sprintf("invalid X-Next-Page header %q", bad))
+			assert.Nil(t, emojis)
+			assert.Equal(t, 1, calls)
+		})
+	}
 }
 
 // Tests focusing on error behavior in the low-level doGet/get methods.

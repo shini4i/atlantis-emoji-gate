@@ -156,7 +156,7 @@ func getAll[T any](ctx context.Context, g *GitlabClient, basePath string) ([]T, 
 
 		page = headers.Get("X-Next-Page") // empty on the last page
 		if page != "" {
-			if _, err := strconv.Atoi(page); err != nil {
+			if n, err := strconv.Atoi(page); err != nil || n < 1 {
 				return nil, fmt.Errorf("invalid X-Next-Page header %q", page)
 			}
 		}
