@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: write
-  packages: write
 
 jobs:
   release:
@@ -17,14 +16,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Load secrets from 1Password
-        uses: 1password/load-secrets-action@70062d7a876d3eb6334754fa26efd2fbd90c32f2 # v5.0.1
-        with:
-          export-env: true
-        env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          GITHUB_TOKEN: op://github-actions/github/token
-
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
@@ -33,3 +24,5 @@ jobs:
         with:
           version: "~> v2"
           args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
