@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-07
+
 ### Added
 
 - `internal/gate` package that centralizes merge-request orchestration logic, leaving `main` as a thin wiring layer.
@@ -27,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Generate mocks with `go.uber.org/mock` via the `go tool` directive instead of hand-written mocks; generated mocks are no longer committed.
 - Migrated build and test automation from `Makefile` to `Taskfile.yml`.
 - CI now pins all GitHub Actions to commit SHAs, runs golangci-lint, and drives build/test through Taskfile.
+- The release workflow authenticates GoReleaser with the workflow-provided `GITHUB_TOKEN` instead of a 1Password-sourced PAT.
 - Upgraded GoReleaser configuration to v2 with a grouped, conventional-commit changelog.
 - Replaced `panic` on configuration errors with `slog.Error` followed by `os.Exit(1)`.
 - Go idiom cleanups: unexported GitLab client fields, `URL` initialism naming, `any` over `interface{}`, and early-return config parsing.
@@ -48,4 +51,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The GitLab client no longer follows HTTP redirects, so its `Private-Token` header cannot be forwarded to another host. Go strips only `Authorization` and `Cookie` when a redirect crosses hosts, leaving a custom auth header exposed.
 - Wired gosec and govulncheck into local automation; both now also run in CI as independent jobs.
 
-[Unreleased]: https://github.com/shini4i/atlantis-emoji-gate/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/shini4i/atlantis-emoji-gate/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/shini4i/atlantis-emoji-gate/compare/v0.4.0...v0.5.0
