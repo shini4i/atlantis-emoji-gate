@@ -2,12 +2,12 @@
 
 # atlantis-emoji-gate
 
-![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/shini4i/atlantis-emoji-gate/run-tests.yml?branch=main&style=plastic)
-![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/shini4i/atlantis-emoji-gate?style=plastic)
-![GitHub release (latest by date)](https://img.shields.io/github/v/release/shini4i/atlantis-emoji-gate?style=plastic)
-![Codecov](https://img.shields.io/codecov/c/github/shini4i/atlantis-emoji-gate?token=1AZLXDU1HP&style=plastic)
-[![Go Report Card](https://goreportcard.com/badge/github.com/shini4i/atlantis-emoji-gate?style=plastic)](https://goreportcard.com/report/github.com/shini4i/atlantis-emoji-gate)
-![GitHub](https://img.shields.io/github/license/shini4i/atlantis-emoji-gate?style=plastic)
+[![CI](https://img.shields.io/github/actions/workflow/status/shini4i/atlantis-emoji-gate/run-tests.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=CI)](https://github.com/shini4i/atlantis-emoji-gate/actions/workflows/run-tests.yml)
+[![Coverage](https://img.shields.io/codecov/c/github/shini4i/atlantis-emoji-gate/main?token=1AZLXDU1HP&style=flat-square&logo=codecov&logoColor=white&label=coverage)](https://codecov.io/gh/shini4i/atlantis-emoji-gate)
+[![Release](https://img.shields.io/github/v/release/shini4i/atlantis-emoji-gate?style=flat-square&logo=github&logoColor=white&label=release)](https://github.com/shini4i/atlantis-emoji-gate/releases/latest)
+[![Go](https://img.shields.io/github/go-mod/go-version/shini4i/atlantis-emoji-gate?style=flat-square&logo=go&logoColor=white&label=go)](https://go.dev/)
+[![License](https://img.shields.io/github/license/shini4i/atlantis-emoji-gate?style=flat-square&label=license)](LICENSE)
+[![Last commit](https://img.shields.io/github/last-commit/shini4i/atlantis-emoji-gate/main?style=flat-square&label=last%20commit)](https://github.com/shini4i/atlantis-emoji-gate/commits/main)
 
 <img src="https://raw.githubusercontent.com/shini4i/assets/main/src/atlantis-emoji-gate/atlantis-emoji-gate.png" alt="alt text" width="30%">
 
@@ -84,6 +84,9 @@ docker pull ghcr.io/shini4i/atlantis:v0.32.0
 | `RESTRICTED`      | Only count approvals given after the latest push to the MR                               | `false`      |
 
 The remaining environment variables are set dynamically by Atlantis and should not be set manually.
+
+The GitLab endpoint must answer directly: the client does not follow redirects, so a proxy that
+redirects (http to https, host rewrite) makes every request fail with the 3xx status.
 
 ### Permissions
 

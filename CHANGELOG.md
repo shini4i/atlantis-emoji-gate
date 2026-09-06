@@ -45,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - `RESTRICTED` mode now measures approval freshness against the merge request's latest diff version, a push time recorded by GitLab itself. It previously used the newest commit's timestamp, which is the git committer date and could be backdated by the merge request author to make a stale approval pass.
-- Wired gosec and govulncheck into local automation; gosec runs in CI.
+- The GitLab client no longer follows HTTP redirects, so its `Private-Token` header cannot be forwarded to another host. Go strips only `Authorization` and `Cookie` when a redirect crosses hosts, leaving a custom auth header exposed.
+- Wired gosec and govulncheck into local automation; both now also run in CI as independent jobs.
 
 [Unreleased]: https://github.com/shini4i/atlantis-emoji-gate/compare/v0.4.0...HEAD

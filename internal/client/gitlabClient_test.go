@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -723,4 +724,42 @@ func TestGitlabClient_Get_BodyCloseErrorLogging(t *testing.T) {
 	assert.NoError(t, err, "The main operation should succeed despite the close error")
 	assert.Contains(t, logBuf.String(), "Failed to close response body", "Log should contain the close failure message")
 	assert.Contains(t, logBuf.String(), "mocked close error", "Log should include the specific close error")
+}
+
+func TestGitlabClient_DoesNotFollowRedirects(t *testing.T) {
+	var mu sync.Mutex
+	var attackerGotToken, originGotToken string
+	var attackerHits int
+
+	// Both servers listen on 127.0.0.1, so they differ by port, not by domain.
+	attacker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		attackerHits++
+		attackerGotToken = r.Header.Get("Private-Token")
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":1}`))
+	}))
+	defer attacker.Close()
+
+	redirector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		originGotToken = r.Header.Get("Private-Token")
+		mu.Unlock()
+		http.Redirect(w, r, attacker.URL+"/steal", http.StatusFound)
+	}))
+	defer redirector.Close()
+
+	client := newTestGitlabClient(redirector.URL)
+
+	var target any
+	err := client.get(context.Background(), "projects/1", &target)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	assert.ErrorContains(t, err, "302")
+	assert.Equal(t, "dummyToken", originGotToken, "Private-Token must reach the configured host")
+	assert.Zero(t, attackerHits, "redirect target must not be contacted")
+	assert.Empty(t, attackerGotToken, "Private-Token must not leak to the redirect target")
 }
