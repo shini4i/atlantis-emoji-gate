@@ -39,11 +39,6 @@ jobs:
         with:
           version: v2.13.2
 
-      - name: Run Gosec Security Scanner
-        uses: securego/gosec@deb54465fea23d19a77f037e11e6589021f8501d # v2.29.0
-        with:
-          args: ./...
-
       - name: Run tests with coverage
         run: task test-coverage
 
@@ -53,3 +48,32 @@ jobs:
           fail_ci_if_error: true
           token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage.out
+
+  gosec:
+    name: Gosec
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Run Gosec Security Scanner
+        uses: securego/gosec@deb54465fea23d19a77f037e11e6589021f8501d # v2.29.0
+        with:
+          args: ./...
+
+  govulncheck:
+    name: Govulncheck
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Run govulncheck
+        uses: golang/govulncheck-action@032d45514ae346b1db93c04b0c90b841c370344f # v1.1.0
+        with:
+          # The action always forwards go-version-input to setup-go, which takes
+          # precedence over go-version-file; blanking it lets go.mod decide.
+          go-version-input: ''
+          go-version-file: go.mod

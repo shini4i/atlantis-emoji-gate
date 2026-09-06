@@ -68,12 +68,20 @@ type DiffVersion struct {
 }
 
 // NewGitlabClient creates a new GitlabClient with the given base URL and token.
+// The client does not follow redirects, since Go strips only Authorization and
+// Cookie across hosts and would forward Private-Token. A GitLab endpoint behind
+// a redirecting proxy therefore fails with the 3xx status.
 func NewGitlabClient(baseURL, token string) *GitlabClient {
 	return &GitlabClient{
 		scheme:  "https",
 		baseURL: baseURL,
 		token:   token,
-		client:  &http.Client{Timeout: defaultTimeout},
+		client: &http.Client{
+			Timeout: defaultTimeout,
+			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
 	}
 }
 
