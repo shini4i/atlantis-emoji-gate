@@ -106,16 +106,29 @@ CODEOWNERS file example:
 
 ```
 * @username1
-/terraform/* @username4
-/terraform/provision @username2 @username4
+/terraform/ @username4
+/terraform/provision/ @username2 @username4
 ```
 
 Rules are evaluated top to bottom against the Atlantis project directory (`REPO_REL_DIR`, e.g. `terraform/deploy`) and **the last matching rule wins**. With the file above:
-- `@username2` and `@username4` can approve MRs in `terraform/provision`
-- `@username4` can approve MRs in `terraform/deploy` (and in any other direct subdirectory of `terraform`)
+- `@username2` and `@username4` can approve MRs in `terraform/provision` and below it
+- `@username4` can approve MRs in `terraform/deploy` (and anywhere else under `terraform`)
 - `@username1` can approve MRs in any directory that no later rule matches; `*` is a fallback, not a superuser
 
-Patterns use Go's [`filepath.Match`](https://pkg.go.dev/path/filepath#Match) syntax. A leading `/` is ignored. `*` on its own matches every directory, but inside a pattern it does not cross `/`: `terraform/*` matches `terraform/deploy` and not `terraform/deploy/prod`. A bare path such as `terraform` matches only that exact directory, not the ones below it.
+Patterns use [GitLab's CODEOWNERS path syntax](https://docs.gitlab.com/user/project/codeowners/reference/). GitLab matches file paths, so a rule applies to a project directory when it matches the files directly inside it:
+
+| Pattern                    | Owns `terraform/provision`? | Why                                                        |
+|----------------------------|-----------------------------|------------------------------------------------------------|
+| `*`                        | yes                         | matches everything                                         |
+| `/terraform/`              | yes                         | a trailing `/` covers the directory and all below it       |
+| `/terraform/provision/*`   | yes                         | matches the files in `terraform/provision`                 |
+| `provision/`               | yes                         | no leading `/` matches at any depth                        |
+| `/terraform/**/provision/` | yes                         | `**/` matches zero or more directories                     |
+| `/terraform/*`             | no                          | `*` does not cross `/`; it owns only files in `terraform`  |
+| `/terraform/provision`     | no                          | without a trailing `/` it names a file                     |
+| `*.tf`                     | no                          | a file name pattern cannot own a directory                 |
+
+`?` and character classes (`[abc]`, `[!abc]`, `[^abc]`) are supported. Escape a space in a path with `\ ` and a leading `#` with `\#`. GitLab sections (`[Section]`) and exclusions (`!pattern`) are not supported. Lines without owners are ignored.
 
 ### Workflow example
 

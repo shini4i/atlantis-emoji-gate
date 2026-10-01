@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING:** CODEOWNERS patterns now follow [GitLab's CODEOWNERS path syntax](https://docs.gitlab.com/user/project/codeowners/reference/) instead of Go's `filepath.Match`. Relative paths match at any depth, a trailing `/` covers the whole directory tree, `**` matches across directories, and `\ ` and `\#` escapes work. A rule now owns a project directory only when it matches the files directly inside it. Review your CODEOWNERS before upgrading: `/terraform/*` no longer covers `terraform/deploy`, and `/terraform/provision` without a trailing `/` no longer matches that directory. Both fall through to earlier rules such as `*`, which can widen who may approve. Write `/terraform/` or `/terraform/provision/` instead.
+
 ## [0.5.0] - 2026-09-07
 
 ### Added
